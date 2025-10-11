@@ -7,8 +7,12 @@ import random
 
 from bot import (
     forward_saved_message,
-    ADMIN_UNS,
+    get_admin_uns,
     CHANNEL_CHAT_ID
+)
+
+from msgs import (
+    load_messages,
 )
 
 async def post(message_id: int):
@@ -16,22 +20,28 @@ async def post(message_id: int):
     return success
 
 async def post_random():
-    from bot import messages
+    messages = load_messages()
     if not messages:
         print("Нет постов для публикации")
         return False
     
-    rand_adm = random.choice(ADMIN_UNS)
+
+    rand_adm = random.choice(get_admin_uns())
     print(f"{rand_adm}")
     msg_from_adm = [msg for msg in messages if msg['username'] == rand_adm]
-    msg = random.choice(msg_from_adm)
+    try:
+        msg = random.choice(msg_from_adm)
+        success = await post(msg['message_id'])
+        if success:
+            print(f"Пост {msg['message_id']} от {msg['username']} опубликован в канал")
+        else:
+            print(f"Не удалось опубликовать пост {msg['message_id']}")
+            return success
+    except:
+        print("У выбранного админа нет постов заготовленных постов") #если посты у админа кончатся 
+        await post_random()
 
-    success = await post(msg['message_id'])
-    if success:
-        print(f"Пост {msg['message_id']} от {msg['username']} опубликован в канал")
-    else:
-        print(f"Не удалось опубликовать пост {msg['message_id']}")
-    return success
+    
 
 async def periodic_post():
     while True:

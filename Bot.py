@@ -6,20 +6,29 @@ import asyncio
 
 import msgs
 import posting
+import adminstat
 
 load_dotenv()
 
+
+
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_CHAT_ID = int(os.getenv('CHANNEL_ID'))
-ADMIN_UNS = [admin_id for admin_id in os.getenv('ADMIN_UNS', '').split(',')]
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-messages = msgs.load_messages()
+
+def get_admin_uns():
+    ADMIN_UNS = [admin_id for admin_id in os.getenv('ADMIN_UNS', '').split(',')]
+    return ADMIN_UNS
+
+
+
 
 def admin_required(func):
     async def wrapper(message):
-        if message.from_user.username not in ADMIN_UNS:
+        if message.from_user.username not in get_admin_uns():
             await message.answer("Недостаточно прав для совершения команды.")
             return
         return await func(message)
@@ -27,16 +36,17 @@ def admin_required(func):
 
 def general_admin_required(func):
     async def wrapper(message):
-        if message.from_user.username != ADMIN_UNS[0] and message.from_user.username not in ADMIN_UNS:
+        if message.from_user.username != get_admin_uns()[0] and message.from_user.username not in get_admin_uns():
             await message.answer("Недостаточно прав для совершения команды")
             return
-        elif message.from_user.username != ADMIN_UNS[0]:
+        elif message.from_user.username != get_admin_uns()[0]:
             await message.answer("Для этой команды требуются права главного админа")
             return
         return await func(message)
     return wrapper
 
 async def forward_saved_message(target_message_id: int, target_chat_id: int):
+    messages = msgs.load_messages()
     for msg in messages:
         if msg['message_id'] == target_message_id:
             try:
@@ -59,9 +69,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
 @dp.message(lambda message: message.photo and (message.text is None or not message.text.startswith('/')))
 @admin_required
 async def handle_source_message(message: types.Message):
-    global messages
     message_data = msgs.save_message_to_json(message)
-    messages = msgs.load_messages()
     await message.answer(f"Сообщение сохранено в JSON: ID {message_data['message_id']} от {message_data['username']}")
     print(f"Сообщение сохранено в JSON: ID {message_data['message_id']} от {message_data['username']}")
 
@@ -99,7 +107,6 @@ async def post_message(message: types.Message):
 async def clear_message(message: types.Message):
     try:
         msgs.clear_messages()
-        messages.clear()
         await message.answer(f"База данных очищена")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
@@ -107,6 +114,7 @@ async def clear_message(message: types.Message):
 @dp.message(Command("info"))
 @admin_required
 async def info_command(message: types.Message):
+    messages = msgs.load_messages()
     response = "Сохраненные сообщения:\n\n"
     for msg in messages:
         response += f"{msg['message_id']} | {msg['username']}\n"
@@ -123,12 +131,12 @@ async def add_admin(message: types.Message):
             await message.answer("Используйте: /addadm @<username>\nПример: /addadm @ivan")
             return
 
-        new_id = args[1][0:]
-        if new_id in ADMIN_UNS:
+        new_id = args[1][1:]
+        if new_id in get_admin_uns():
             await message.answer("Этот пользователь уже является админом.")
             return
 
-        ADMIN_UNS.append(new_id)
+        get_admin_uns().append(new_id)
 
         with open('.env', 'r') as f:
             lines = f.readlines()
@@ -136,7 +144,7 @@ async def add_admin(message: types.Message):
         with open('.env', 'w') as f:
             for line in lines:
                 if line.startswith('ADMIN_UNS'):
-                    f.write(f"ADMIN_UNS = {','.join(map(str, ADMIN_UNS))}\n")
+                    f.write(f"ADMIN_UNS = {','.join(map(str, get_admin_uns()))}\n")
                 else:
                     f.write(line)
 
@@ -154,9 +162,9 @@ async def add_admin(message: types.Message):
             await message.answer("Используйте: /deladm @<username>\nПример: /deladm @ivan")
             return
 
-        new_id = args[1][0:]
-        if new_id in ADMIN_UNS:
-            ADMIN_UNS.remove(new_id)
+        new_id = args[1][1:]
+        if new_id in get_admin_uns():
+            get_admin_uns().remove(new_id)
         else:
             await message.answer("Этот пользователь уже отсутствует в списке админов.")
             return
@@ -168,7 +176,7 @@ async def add_admin(message: types.Message):
         with open('.env', 'w') as f:
             for line in lines:
                 if line.startswith('ADMIN_UNS'):
-                    f.write(f"ADMIN_UNS = {','.join(map(str, ADMIN_UNS))}\n")
+                    f.write(f"ADMIN_UNS = {','.join(map(str, get_admin_uns()))}\n")
                 else:
                     f.write(line)
 
