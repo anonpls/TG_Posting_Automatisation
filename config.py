@@ -1,0 +1,5 @@
+from datetime import datetime
+START_HOUR, START_MINUTE = 00, 00
+END_HOUR, END_MINUTE = 23, 59 
+POSTING_INTERVAL = 1/12/60
+LAST_TIME_POST = datetime(2025, 10, 12, 17, 29, 50)
