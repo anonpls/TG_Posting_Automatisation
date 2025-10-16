@@ -44,13 +44,14 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
     for msg in messages:
         if msg['message_id'] == target_message_id:
             try:
-                await bot.forward_message(
+                forwarded_msg = await bot.forward_message(
                     chat_id=target_chat_id,
                     from_chat_id=msg['chat_id'],
                     message_id=msg['message_id']
                 )
                 
                 print(f"Сообщение {target_message_id} переслано в канал")
+                msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)
                 return True
                 
             except Exception as e:
@@ -64,9 +65,9 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
 @dp.message(lambda message: message.photo and (message.text is None or not message.text.startswith('/')))
 @admin_required
 async def handle_source_message(message: types.Message):
-    message_data = msgs.save_message_to_json(message)
-    await message.answer(f"Сообщение сохранено в JSON: ID {message_data['message_id']} от {message_data['username']}")
-    print(f"Сообщение сохранено в JSON: ID {message_data['message_id']} от {message_data['username']}")
+    message_data = msgs.save_message_to_db(message)
+    await message.answer(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
+    print(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
 
 
 @dp.message(Command("start"))
@@ -177,11 +178,12 @@ async def clear_message(message: types.Message):
 @dp.message(Command("info"))
 @admin_required
 async def info_command(message: types.Message):
-    messages = msgs.load_messages()
+    messages = msgs.load_all_messages()
     response = "Сохраненные сообщения:\n\n"
     for msg in messages:
-        response += f"{msg['message_id']} | {msg['username']}\n"
-        response += "─" * 30 + "\n"
+        status = "Опубликовано" if msg['posted'] else "Не опубликовано"
+        response += f"{msg['message_id']} | {msg['username']} | {status}\n"
+        response += "─" * 40 + "\n"
 
     await message.answer(response)
 

@@ -1,8 +1,8 @@
-import json
+import sqlite3
 import os
 from dotenv import load_dotenv
 
-STATISTICS_FILE = "statistics.json"
+STATISTICS_DB = "statistics.db"
 
 
 def get_admin_uns():
@@ -11,34 +11,63 @@ def get_admin_uns():
     return ADMIN_UNS
 
 
-def set_first_stat():
-    admstat = []
-    for adm in get_admin_uns():
-        admin = {
-            'username': adm,
-            'postcount': 0
-        }
-        admstat.append(admin)
-    return admstat
+def init_statistics_db():
+    conn = sqlite3.connect(STATISTICS_DB)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS statistics (
+            username TEXT PRIMARY KEY,
+            postcount INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def migrate_statistics_from_json():
+    import json
+    if os.path.exists("statistics.json"):
+        try:
+            with open("statistics.json", 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            conn = sqlite3.connect(STATISTICS_DB)
+            cursor = conn.cursor()
+            for item in data:
+                cursor.execute('INSERT OR REPLACE INTO statistics (username, postcount) VALUES (?, ?)',
+                               (item['username'], item['postcount']))
+            conn.commit()
+            conn.close()
+            os.rename("statistics.json", "statistics.json.backup")
+        except Exception as e:
+            print(f"Error migrating statistics: {e}")
 
 
 def load_stat():
-    try:
-        with open(STATISTICS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        with open(STATISTICS_FILE, 'w', encoding='utf-8') as f:
-            return json.dump(set_first_stat(), f, ensure_ascii=False, indent=2)
-   
-        
+    init_statistics_db()
+    migrate_statistics_from_json()
+    conn = sqlite3.connect(STATISTICS_DB)
+    cursor = conn.cursor()
+    cursor.execute('SELECT username, postcount FROM statistics')
+    rows = cursor.fetchall()
+    conn.close()
+    return [{'username': row[0], 'postcount': row[1]} for row in rows]
+
+
 def save_stat(stat):
-    with open(STATISTICS_FILE, 'w', encoding='utf-8') as f:
-            return json.dump(stat, f, ensure_ascii=False, indent=2)
+    init_statistics_db()
+    conn = sqlite3.connect(STATISTICS_DB)
+    cursor = conn.cursor()
+    for item in stat:
+        cursor.execute('INSERT OR REPLACE INTO statistics (username, postcount) VALUES (?, ?)',
+                       (item['username'], item['postcount']))
+    conn.commit()
+    conn.close()
 
 
 def add_post_to_count(admin):
-    stat = load_stat()
-    for adm in stat:
-        if adm['username'] == admin:
-            adm['postcount'] += 1
-    save_stat(stat)
+    init_statistics_db()
+    conn = sqlite3.connect(STATISTICS_DB)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE statistics SET postcount = postcount + 1 WHERE username = ?', (admin,))
+    conn.commit()
+    conn.close()

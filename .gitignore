@@ -1,6 +1,6 @@
 venv/
 __pycache__/
 downloads/
-statistics.json
-messages.json
+statistics.db
+messages.db
 .env
