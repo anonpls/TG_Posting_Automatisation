@@ -137,6 +137,11 @@ async def set_time(message: types.Message):
         if not (0 <= start_hour <= 23 and 0 <= start_min <= 59 and 0 <= end_hour <= 23 and 0 <= end_min <= 59):
             await message.answer("Время должно быть в диапазоне 00:00 - 23:59")
             return
+        start_time = start_hour * 60 + start_min
+        end_time = end_hour * 60 + end_min
+        if start_time >= end_time:
+            await message.answer("Время начала должно быть меньше времени конца")
+            return
         with open('config.py', 'r+') as f:
                 lines = f.readlines()
                 f.seek(0)
