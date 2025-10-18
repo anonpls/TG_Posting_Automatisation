@@ -1,4 +1,5 @@
 import importlib
+import logging
 from datetime import datetime, time, timedelta
 import asyncio
 import random
@@ -11,8 +12,11 @@ from msgs import (
     load_messages
 )
 from adminstat import (
-    add_post_to_count
+    add_post_to_count,
+    decrement_queued_to_count
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def post(message_id: int):
@@ -36,11 +40,11 @@ async def post_random():
     admins = get_admin_uns()
 
     if not messages:
-        print("Нет постов для публикации")
+        logger.warning("Нет постов для публикации")
         return False
-    
+
     rand_adm = random.choice(admins)
-    print(f"{rand_adm}")
+    logger.info(f"Выбран админ для постинга: {rand_adm}")
 
     msg_from_adm = [msg for msg in messages if msg['username'] == rand_adm]
     try:
@@ -48,11 +52,12 @@ async def post_random():
         success = await post(msg['message_id'])
         if success:
             add_post_to_count(rand_adm)
+            decrement_queued_to_count(rand_adm)
         else:
-            print(f"Не удалось опубликовать пост {msg['message_id']}")
+            logger.error(f"Не удалось опубликовать пост {msg['message_id']}")
             return success
     except:
-        print("У выбранного админа нет постов заготовленных постов") #если посты у админа кончатся 
+        logger.warning("У выбранного админа нет постов заготовленных постов")
         await post_random()
 
 
@@ -61,6 +66,21 @@ async def periodic_post():
         import config
         importlib.reload(config)
         now = datetime.now().time()
+        today = datetime.now().date()
+        if (datetime.now() - config.LAST_RESET_DATE).days >= config.RESET_INTERVAL_DAYS:
+            from adminstat import reset_statistics
+            from msgs import clear_posted_messages
+            reset_statistics()
+            clear_posted_messages()
+            with open('config.py', 'r+') as f:
+                lines = f.readlines()
+                f.seek(0)
+                for line in lines:
+                    if line.startswith('LAST_RESET_DATE'):
+                        f.write(f"LAST_RESET_DATE = datetime({today.year}, {today.month}, {today.day})\n")
+                    else:
+                        f.write(line)
+                f.truncate()
         if time(config.START_HOUR, config.START_MINUTE) <= now <= time(config.END_HOUR, config.END_MINUTE):
             await post_random()
             await asyncio.sleep(config.POSTING_INTERVAL * 60 * 60)

@@ -1,8 +1,11 @@
 import sqlite3
+import logging
 from aiogram import types
 import os
 
 MESSAGES_DB = "messages.db"
+
+logger = logging.getLogger(__name__)
 
 
 def init_messages_db():
@@ -62,6 +65,16 @@ def clear_messages():
     conn.close()
 
 
+def clear_posted_messages():
+    init_messages_db()
+    conn = sqlite3.connect(MESSAGES_DB)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM messages WHERE posted = TRUE')
+    conn.commit()
+    conn.close()
+    logger.info("Опубликованные сообщения удалены из базы данных")
+
+
 def save_message_to_db(message: types.Message):
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
@@ -70,7 +83,12 @@ def save_message_to_db(message: types.Message):
                    (message.message_id, message.chat.id, message.from_user.username if message.from_user else None))
     conn.commit()
     conn.close()
-    
+
+    from adminstat import add_queued_to_count
+    if message.from_user and message.from_user.username:
+        add_queued_to_count(message.from_user.username)
+        logger.info(f"Сообщение {message.message_id} сохранено в базу данных от пользователя {message.from_user.username}")
+
     return {
         'message_id': message.message_id,
         'chat_id': message.chat.id,

@@ -1,8 +1,8 @@
 import os
+import logging
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import MessageReactionCountUpdated
 import asyncio
 
 import msgs
@@ -11,6 +11,9 @@ from adminstat import (
     get_admin_uns,
     load_stat
 )
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%d-%m-%Y %H:%M:%S')
+logger = logging.getLogger(__name__)
 
 load_dotenv(override=True)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -51,15 +54,15 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
                     message_id=msg['message_id']
                 )
                 
-                print(f"Сообщение {target_message_id} переслано в канал")
+                logger.info(f"Сообщение {target_message_id} переслано в канал")
                 msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)
                 return True
-                
+
             except Exception as e:
-                print(f"Ошибка при пересылке сообщения {target_message_id}: {e}")
+                logger.error(f"Ошибка при пересылке сообщения {target_message_id}: {e}")
                 return False
-    
-    print(f"Сообщение {target_message_id} не найдено")
+
+    logger.warning(f"Сообщение {target_message_id} не найдено")
     return False
 
 
@@ -68,20 +71,22 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
 async def handle_source_message(message: types.Message):
     message_data = msgs.save_message_to_db(message)
     await message.answer(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
-    print(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
+    logger.info(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
 
 
-@dp.message(Command("start"))
+@dp.message(Command("menu"))
 @admin_required
-async def start_command(message: types.Message):
+async def menu_command(message: types.Message):
     await message.answer(
         "Привет, готов к работе! :)\n\n"
         "Вот список моих команд:\n"
-        "/start - Запуск бота и отображение списка команд\n"
+        "/menu - Отображение списка команд\n"
         "/post <message_id> - Принудительная пересылка сообщения в канал по ID\n"
         "/settime <start_time> <end_time> - Установка времени начала и конца постинга (формат: HH:MM HH:MM)\n"
         "/setinterval <hours> - Установка интервала постинга в часах\n"
+        "/resetstattime <days> - Установка интервала сброса статистики в днях\n"
         "/stat - Просмотр статистики по админам\n"
+        "/config - Просмотр текущих настроек конфигурации\n"
         "/clear - Очистка базы данных сообщений\n"
         "/info - Просмотр сохраненных сообщений\n"
         "/addadm @<username> - Добавление нового админа\n"
@@ -119,29 +124,49 @@ async def post_message(message: types.Message):
 async def set_time(message: types.Message):
     try:
         args = message.text.split()
+        if len(args) != 3:
+            await message.answer("Используйте: /settime <start_time> <end_time>\nПример: /settime 09:00 18:00")
+            return
         llimit = args[1].split(":")
         ulimit = args[2].split(":")
+        if len(llimit) != 2 or len(ulimit) != 2:
+            await message.answer("Неверный формат времени. Используйте HH:MM")
+            return
+        start_hour, start_min = int(llimit[0]), int(llimit[1])
+        end_hour, end_min = int(ulimit[0]), int(ulimit[1])
+        if not (0 <= start_hour <= 23 and 0 <= start_min <= 59 and 0 <= end_hour <= 23 and 0 <= end_min <= 59):
+            await message.answer("Время должно быть в диапазоне 00:00 - 23:59")
+            return
         with open('config.py', 'r+') as f:
                 lines = f.readlines()
                 f.seek(0)
                 for line in lines:
                     if line.startswith('START_HOUR'):
-                        f.write(f"START_HOUR, START_MINUTE = {llimit[0]}, {llimit[1]}\n")
+                        f.write(f"START_HOUR, START_MINUTE = {start_hour}, {start_min}\n")
                     elif line.startswith('END_HOUR'):
-                        f.write(f"END_HOUR, END_MINUTE = {ulimit[0]}, {ulimit[1]}\n")
+                        f.write(f"END_HOUR, END_MINUTE = {end_hour}, {end_min}\n")
                     else:
                         f.write(line)
                 f.truncate()
+        await message.answer(f"Время постинга установлено: {start_hour:02d}:{start_min:02d} - {end_hour:02d}:{end_min:02d}")
+    except ValueError:
+        await message.answer("Неверный формат времени. Используйте HH:MM")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
 
 @dp.message(Command("setinterval"))
 @general_admin_required
-async def set_time(message: types.Message):
+async def set_interval(message: types.Message):
     try:
         args = message.text.split()
-        interval = args[1]
+        if len(args) != 2:
+            await message.answer("Используйте: /setinterval <hours>\nПример: /setinterval 2")
+            return
+        interval = int(args[1])
+        if interval <= 0:
+            await message.answer("Интервал должен быть положительным числом")
+            return
         with open('config.py', 'r+') as f:
                 lines = f.readlines()
                 f.seek(0)
@@ -151,6 +176,37 @@ async def set_time(message: types.Message):
                     else:
                         f.write(line)
                 f.truncate()
+        await message.answer(f"Интервал постинга установлен: {interval} часов")
+    except ValueError:
+        await message.answer("Интервал должен быть целым числом")
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(Command("resetstattime"))
+@general_admin_required
+async def set_reset_stat_time(message: types.Message):
+    try:
+        args = message.text.split()
+        if len(args) != 2:
+            await message.answer("Используйте: /resetstattime <days>\nПример: /resetstattime 7")
+            return
+        days = int(args[1])
+        if days <= 0:
+            await message.answer("Интервал должен быть положительным числом")
+            return
+        with open('config.py', 'r+') as f:
+                lines = f.readlines()
+                f.seek(0)
+                for line in lines:
+                    if line.startswith('RESET_INTERVAL_DAYS'):
+                        f.write(f"RESET_INTERVAL_DAYS = {days}\n")
+                    else:
+                        f.write(line)
+                f.truncate()
+        await message.answer(f"Интервал сброса статистики установлен: {days} дней")
+    except ValueError:
+        await message.answer("Интервал должен быть целым числом")
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
@@ -159,10 +215,33 @@ async def set_time(message: types.Message):
 @general_admin_required
 async def stat_command(message: types.Message):
     stat = load_stat()
-    response = "Статистика по админам: (юзернейм|посты)\n\n"
+    response = "Статистика по админам: (юзернейм|выложенные|в очереди)\n\n"
     for adm in stat:
-        response += f"{adm['username']} | {adm['postcount']}\n"
-        response += "─" * 30 + "\n"
+        response += f"{adm['username']} | {adm['postcount']} | {adm['queuedcount']}\n"
+        response += "─" * 40 + "\n"
+    await message.answer(response)
+
+
+@dp.message(Command("config"))
+@general_admin_required
+async def config_command(message: types.Message):
+    import config
+    admins = get_admin_uns()
+    response = "Текущие настройки конфигурации:\n\n"
+    response += f"Время начала постинга: {config.START_HOUR:02d}:{config.START_MINUTE:02d}\n"
+    response += f"Время конца постинга: {config.END_HOUR:02d}:{config.END_MINUTE:02d}\n"
+    if config.POSTING_INTERVAL >= 1:
+        response += f"Интервал постинга: {round(config.POSTING_INTERVAL)} часов\n"
+    elif config.POSTING_INTERVAL >= 1/60:
+        minutes = round(config.POSTING_INTERVAL * 60)
+        response += f"Интервал постинга: {minutes} минут\n"
+    else:
+        seconds = round(config.POSTING_INTERVAL * 3600)
+        response += f"Интервал постинга: {seconds} секунд\n"
+    response += f"Последний пост: {config.LAST_TIME_POST}\n"
+    response += f"Последний сброс статистики: {config.LAST_RESET_DATE}\n"
+    response += f"Интервал сброса статистики: {config.RESET_INTERVAL_DAYS} дней\n"
+    response += f"Админы: {', '.join('@' + adm for adm in admins)}\n"
     await message.answer(response)
 
 
@@ -259,7 +338,7 @@ async def add_admin(message: types.Message):
 async def main():
     asyncio.create_task(posting.periodic_post())
     await dp.start_polling(bot)
-    print("Бот запущен")
+    logger.info("Бот запущен")
 
 
 if __name__ == "__main__":
