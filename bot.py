@@ -48,12 +48,19 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
     for msg in messages:
         if msg['message_id'] == target_message_id:
             try:
-                forwarded_msg = await bot.forward_message(
-                    chat_id=target_chat_id,
-                    from_chat_id=msg['chat_id'],
-                    message_id=msg['message_id']
-                )
-                
+                if msg.get('is_forwarded_from_channel', True):
+                    forwarded_msg = await bot.forward_message(
+                        chat_id=target_chat_id,
+                        from_chat_id=msg['chat_id'],
+                        message_id=msg['message_id']
+                    )
+                else:
+                    forwarded_msg = await bot.copy_message(
+                        chat_id=target_chat_id,
+                        from_chat_id=msg['chat_id'],
+                        message_id=msg['message_id']
+                    )
+
                 logger.info(f"Сообщение {target_message_id} переслано в канал")
                 msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)
                 return True
