@@ -3,4 +3,5 @@ __pycache__/
 downloads/
 statistics.db
 messages.db
+config.py
 .env

@@ -73,7 +73,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
     return False
 
 
-@dp.message(lambda message: message.photo and (message.text is None or not message.text.startswith('/')))
+@dp.message(lambda message: (message.photo or message.document or message.video) and (message.text is None or not message.text.startswith('/')))
 @admin_required
 async def handle_source_message(message: types.Message):
     message_data = msgs.save_message_to_db(message)
