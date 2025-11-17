@@ -1,9 +1,12 @@
 import os
 import logging
+import aiohttp
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 import asyncio
+import ssl
+import certifi
 
 import msgs
 import posting
@@ -11,6 +14,8 @@ from adminstat import (
     get_admin_uns,
     load_stat
 )
+
+ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%d-%m-%Y %H:%M:%S')
 logger = logging.getLogger(__name__)
@@ -45,29 +50,85 @@ def general_admin_required(func):
 
 async def forward_saved_message(target_message_id: int, target_chat_id: int):
     messages = msgs.load_messages()
+    BOT_MAPPINGS = os.getenv('BOT_MAPPINGS', '')
+    bots = {}
+    if BOT_MAPPINGS:
+        for mapping in BOT_MAPPINGS.split(','):
+            if ':' in mapping:
+                parts = mapping.split(':')
+                if len(parts) >= 2:
+                    token = ':'.join(parts[:-1])
+                    username = parts[-1]
+                    bots[username] = token
+
     for msg in messages:
         if msg['message_id'] == target_message_id:
-            try:
-                if msg.get('is_forwarded_from_channel', True):
-                    forwarded_msg = await bot.forward_message(
-                        chat_id=target_chat_id,
-                        from_chat_id=msg['chat_id'],
-                        message_id=msg['message_id']
-                    )
-                else:
-                    forwarded_msg = await bot.copy_message(
-                        chat_id=target_chat_id,
-                        from_chat_id=msg['chat_id'],
-                        message_id=msg['message_id']
+            if msg['username'] not in bots:
+                logger.info("Используем основного бота")
+                try:
+                    if msg.get('is_forwarded_from_channel', True):
+                        forwarded_msg = await bot.forward_message(
+                            chat_id=target_chat_id,
+                            from_chat_id=msg['chat_id'],
+                            message_id=msg['message_id']
+                        )
+                    else:
+                        forwarded_msg = await bot.copy_message(
+                            chat_id=target_chat_id,
+                            from_chat_id=msg['chat_id'],
+                            message_id=msg['message_id']
+                        )
+
+                    logger.info(f"Сообщение {target_message_id} переслано в канал")
+                    msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)
+                    return True
+
+                except Exception as e:
+                    logger.error(f"Ошибка при пересылке сообщения {target_message_id}: {e}")
+                    return False
+            else:
+                logger.info("Используем именного бота")
+                other_bot_token = bots[msg['username']]
+                api_url = f"https://api.telegram.org/bot{other_bot_token}"
+
+                try:
+                    if msg.get('is_forwarded_from_channel', True):
+                        method = "forwardMessage"
+                    else:
+                        method = "copyMessage"
+
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            f"{api_url}/{method}",
+                            json={
+                                "chat_id": target_chat_id,
+                                "from_chat_id": msg['chat_id'],
+                                "message_id": msg['message_id'],
+                            },
+                            ssl=ssl_context
+                        ) as response:
+                            data = await response.json()
+
+                            if not data.get("ok", False):
+                                logger.error(f"Ошибка Telegram API при отправке другим ботом: {data}")
+                                return False
+
+                            forwarded_msg_id = data["result"]["message_id"]
+
+                    logger.info(f"Сообщение {target_message_id} отправлено ботом @{msg['username']}")
+
+                    msgs.update_message_posted(
+                        msg['message_id'],
+                        msg['chat_id'],
+                        forwarded_msg_id
                     )
 
-                logger.info(f"Сообщение {target_message_id} переслано в канал")
-                msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)
-                return True
+                    return True
 
-            except Exception as e:
-                logger.error(f"Ошибка при пересылке сообщения {target_message_id}: {e}")
-                return False
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке другим ботом: {e}")
+                    return False
+
 
     logger.warning(f"Сообщение {target_message_id} не найдено")
     return False
@@ -315,7 +376,7 @@ async def add_admin(message: types.Message):
 
 @dp.message(Command("deladm"))
 @general_admin_required
-async def add_admin(message: types.Message):
+async def del_admin(message: types.Message):
     try:
         admins = get_admin_uns()
         args = message.text.split()
@@ -342,6 +403,110 @@ async def add_admin(message: types.Message):
                     f.write(line)
 
         await message.answer(f"Пользователь {new_id} лишён прав админа.")
+
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(Command("addbot"))
+@general_admin_required
+async def add_bot(message: types.Message):
+    try:
+        args = message.text.split()
+        if len(args) != 3:
+            await message.answer("Используйте: /addbot <BOT_TOKEN> <USER_TAG>\nПример: /addbot 123456:ABC-DEF... @ivan")
+            return
+
+        bot_token = args[1]
+        user_tag = args[2].lstrip('@')
+
+        BOT_MAPPINGS = os.getenv('BOT_MAPPINGS', '')
+        bots = {}
+        if BOT_MAPPINGS:
+            for mapping in BOT_MAPPINGS.split(','):
+                if ':' in mapping:
+                    parts = mapping.split(':')
+                    if len(parts) >= 2:
+                        token = ':'.join(parts[:-1])
+                        username = parts[-1]
+                        bots[username] = token
+        
+        if user_tag in bots:
+            await message.answer(f"Бот для пользователя {user_tag} уже существует.")
+            return
+
+        # Обновить .env
+        with open('.env', 'r') as f:
+            lines = f.readlines()
+
+        bot_mappings = []
+        for line in lines:
+            if line.startswith('BOT_MAPPINGS'):
+                existing = line.split('=')[1].strip()
+                if existing:
+                    bot_mappings = existing.split(',')
+                break
+        else:
+            lines.append('BOT_MAPPINGS =\n')
+
+        bot_mappings.append(f'{bot_token}:{user_tag}')
+
+        with open('.env', 'w') as f:
+            for line in lines:
+                if line.startswith('BOT_MAPPINGS'):
+                    f.write(f'BOT_MAPPINGS = {",".join(bot_mappings)}\n')
+                else:
+                    f.write(line)
+
+        await message.answer(f"Бот для пользователя {user_tag} добавлен.")
+
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(Command("deletebot"))
+@general_admin_required
+async def delete_bot(message: types.Message):
+    try:
+        args = message.text.split()
+        if len(args) != 2:
+            await message.answer("Используйте: /deletebot <USER_TAG>\nПример: /deletebot @ivan")
+            return
+
+        user_tag = args[1].lstrip('@')
+
+        BOT_MAPPINGS = os.getenv('BOT_MAPPINGS', '')
+        bots = {}
+        if BOT_MAPPINGS:
+            for mapping in BOT_MAPPINGS.split(','):
+                if ':' in mapping:
+                    parts = mapping.split(':')
+                    if len(parts) >= 2:
+                        token = ':'.join(parts[:-1])
+                        username = parts[-1]
+                        bots[username] = token
+
+        if user_tag not in bots:
+            await message.answer(f"Бот для пользователя {user_tag} не найден.")
+            return
+
+        # Обновить .env
+        with open('.env', 'r') as f:
+            lines = f.readlines()
+
+        with open('.env', 'w') as f:
+            for line in lines:
+                if line.startswith('BOT_MAPPINGS'):
+                    existing = line.split('=')[1].strip()
+                    if existing:
+                        mappings = [m for m in existing.split(',') if not m.endswith(f':{user_tag}')]
+                        f.write(f'BOT_MAPPINGS = {",".join(mappings)}\n')
+                    else:
+                        f.write('BOT_MAPPINGS =\n')
+                else:
+                    f.write(line)
+
+        await message.answer(f"Бот для пользователя {user_tag} удалён.")
 
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
