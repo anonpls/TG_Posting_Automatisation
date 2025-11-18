@@ -114,7 +114,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
 
 async def post(message_id: int):
     from config import LAST_TIME_POST, POSTING_INTERVAL
-    if (datetime.now() - LAST_TIME_POST >= timedelta(hours = POSTING_INTERVAL)):
+    if (datetime.now() - LAST_TIME_POST >= timedelta(seconds = POSTING_INTERVAL)):
         success = await forward_saved_message(message_id, CHANNEL_CHAT_ID)
         with open('.env', 'r') as f:
             lines = f.readlines()
@@ -197,6 +197,6 @@ async def periodic_post():
                         f.write(line)
         if time(config.START_HOUR, config.START_MINUTE) <= now <= time(config.END_HOUR, config.END_MINUTE):
             await post_random()
-            await asyncio.sleep(config.POSTING_INTERVAL * 60 * 60)
+            await asyncio.sleep(config.POSTING_INTERVAL)
         else:
             await asyncio.sleep(60)

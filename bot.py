@@ -50,9 +50,6 @@ def general_admin_required(func):
     return wrapper
 
 
-
-
-
 @dp.message(lambda message: (message.photo or message.document or message.video) and (message.text is None or not message.text.startswith('/')))
 @admin_required
 async def handle_source_message(message: types.Message):
@@ -66,26 +63,30 @@ async def handle_source_message(message: types.Message):
 @dp.message(Command("menu"))
 @admin_required
 async def menu_command(message: types.Message):
+    logger.info(f"Команда /menu использована пользователем @{message.from_user.username}")
     await message.answer(
         "Привет, готов к работе! :)\n\n"
         "Вот список моих команд:\n"
         "/menu - Отображение списка команд\n"
         "/post <message_id> - Принудительная пересылка сообщения в канал по ID\n"
         "/settime <start_time> <end_time> - Установка времени начала и конца постинга (формат: HH:MM HH:MM)\n"
-        "/setinterval <hours> - Установка интервала постинга в часах\n"
+        "/setinterval <seconds> - Установка интервала постинга в секундах\n"
         "/resetstattime <days> - Установка интервала сброса статистики в днях\n"
         "/stat - Просмотр статистики по админам\n"
         "/config - Просмотр текущих настроек конфигурации\n"
         "/clear - Очистка базы данных сообщений\n"
         "/info - Просмотр сохраненных сообщений\n"
         "/addadm @<username> - Добавление нового админа\n"
-        "/deladm @<username> - Удаление админа"
+        "/deladm @<username> - Удаление админа\n"
+        "/addbot <BOT_TOKEN> <USER_TAG> - Добавление бота для пользователя\n"
+        "/deletebot <USER_TAG> - Удаление бота для пользователя"
     )
 
 
 @dp.message(Command("post"))
 @general_admin_required
 async def post_message(message: types.Message):
+    logger.info(f"Команда /post использована пользователем @{message.from_user.username} с аргументом {message.text.split()[1] if len(message.text.split()) > 1 else 'нет'}")
     try:
         args = message.text.split()
         if len(args) < 2:
@@ -95,15 +96,15 @@ async def post_message(message: types.Message):
                 "Список сообщений: /info"
             )
             return
-        
+
         message_id = int(args[1])
         success = await post(message_id)
-        
+
         if success:
             await message.answer(f"Сообщение {message_id} переслано в канал")
         else:
             await message.answer(f"Не удалось переслать сообщение {message_id}")
-            
+
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
@@ -111,6 +112,7 @@ async def post_message(message: types.Message):
 @dp.message(Command("settime"))
 @general_admin_required
 async def set_time(message: types.Message):
+    logger.info(f"Команда /settime использована пользователем @{message.from_user.username} с аргументами {message.text.split()[1:] if len(message.text.split()) > 1 else 'нет'}")
     try:
         args = message.text.split()
         if len(args) != 3:
@@ -156,10 +158,11 @@ async def set_time(message: types.Message):
 @dp.message(Command("setinterval"))
 @general_admin_required
 async def set_interval(message: types.Message):
+    logger.info(f"Команда /setinterval использована пользователем @{message.from_user.username} с аргументом {message.text.split()[1] if len(message.text.split()) > 1 else 'нет'}")
     try:
         args = message.text.split()
         if len(args) != 2:
-            await message.answer("Используйте: /setinterval <hours>\nПример: /setinterval 2")
+            await message.answer("Используйте: /setinterval <seconds>\nПример: /setinterval 7200")
             return
         interval = int(args[1])
         if interval <= 0:
@@ -174,7 +177,7 @@ async def set_interval(message: types.Message):
                     f.write(f'POSTING_INTERVAL = {interval}\n')
                 else:
                     f.write(line)
-        await message.answer(f"Интервал постинга установлен: {interval} часов")
+        await message.answer(f"Интервал постинга установлен: {interval} секунд")
     except ValueError:
         await message.answer("Интервал должен быть целым числом")
     except Exception as e:
@@ -184,6 +187,7 @@ async def set_interval(message: types.Message):
 @dp.message(Command("resetstattime"))
 @general_admin_required
 async def set_reset_stat_time(message: types.Message):
+    logger.info(f"Команда /resetstattime использована пользователем @{message.from_user.username} с аргументом {message.text.split()[1] if len(message.text.split()) > 1 else 'нет'}")
     try:
         args = message.text.split()
         if len(args) != 2:
@@ -212,6 +216,7 @@ async def set_reset_stat_time(message: types.Message):
 @dp.message(Command("stat"))
 @general_admin_required
 async def stat_command(message: types.Message):
+    logger.info(f"Команда /stat использована пользователем @{message.from_user.username}")
     stat = load_stat()
     response = "Статистика по админам: (юзернейм|выложенные|в очереди)\n\n"
     for adm in stat:
@@ -223,13 +228,14 @@ async def stat_command(message: types.Message):
 @dp.message(Command("config"))
 @general_admin_required
 async def config_command(message: types.Message):
+    logger.info(f"Команда /config использована пользователем @{message.from_user.username}")
     import config
     admins = get_admin_uns()
     response = "Текущие настройки конфигурации:\n\n"
     response += f"Время начала постинга: {config.START_HOUR:02d}:{config.START_MINUTE:02d}\n"
     response += f"Время конца постинга: {config.END_HOUR:02d}:{config.END_MINUTE:02d}\n"
     if config.POSTING_INTERVAL >= 1:
-        response += f"Интервал постинга: {round(config.POSTING_INTERVAL)} часов\n"
+        response += f"Интервал постинга: {round(config.POSTING_INTERVAL)} секунд\n"
     elif config.POSTING_INTERVAL >= 1/60:
         minutes = round(config.POSTING_INTERVAL * 60)
         response += f"Интервал постинга: {minutes} минут\n"
@@ -246,6 +252,7 @@ async def config_command(message: types.Message):
 @dp.message(Command("clear"))
 @general_admin_required
 async def clear_message(message: types.Message):
+    logger.info(f"Команда /clear использована пользователем @{message.from_user.username}")
     try:
         msgs.clear_messages()
         await message.answer(f"База данных очищена")
@@ -256,6 +263,7 @@ async def clear_message(message: types.Message):
 @dp.message(Command("info"))
 @admin_required
 async def info_command(message: types.Message):
+    logger.info(f"Команда /info использована пользователем @{message.from_user.username}")
     messages = msgs.load_all_messages()
     response = "Сохраненные сообщения:\n\n"
     for msg in messages:
@@ -269,6 +277,7 @@ async def info_command(message: types.Message):
 @dp.message(Command("addadm"))
 @general_admin_required
 async def add_admin(message: types.Message):
+    logger.info(f"Команда /addadm использована пользователем @{message.from_user.username} с аргументом {message.text.split()[1] if len(message.text.split()) > 1 else 'нет'}")
     try:
         admins = get_admin_uns()
         args = message.text.split()
@@ -302,6 +311,7 @@ async def add_admin(message: types.Message):
 @dp.message(Command("deladm"))
 @general_admin_required
 async def del_admin(message: types.Message):
+    logger.info(f"Команда /deladm использована пользователем @{message.from_user.username} с аргументом {message.text.split()[1] if len(message.text.split()) > 1 else 'нет'}")
     try:
         admins = get_admin_uns()
         args = message.text.split()
@@ -336,6 +346,7 @@ async def del_admin(message: types.Message):
 @dp.message(Command("addbot"))
 @general_admin_required
 async def add_bot(message: types.Message):
+    logger.info(f"Команда /addbot использована пользователем @{message.from_user.username} с аргументами {message.text.split()[1:] if len(message.text.split()) > 1 else 'нет'}")
     try:
         args = message.text.split()
         if len(args) != 3:
@@ -355,7 +366,7 @@ async def add_bot(message: types.Message):
                         token = ':'.join(parts[:-1])
                         username = parts[-1]
                         bots[username] = token
-        
+
         if user_tag in bots:
             await message.answer(f"Бот для пользователя {user_tag} уже существует.")
             return
@@ -392,6 +403,7 @@ async def add_bot(message: types.Message):
 @dp.message(Command("deletebot"))
 @general_admin_required
 async def delete_bot(message: types.Message):
+    logger.info(f"Команда /deletebot использована пользователем @{message.from_user.username} с аргументом {message.text.split()[1] if len(message.text.split()) > 1 else 'нет'}")
     try:
         args = message.text.split()
         if len(args) != 2:
