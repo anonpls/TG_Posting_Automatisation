@@ -1,6 +1,5 @@
 import os
 import logging
-import aiohttp
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -9,7 +8,10 @@ import ssl
 import certifi
 
 import msgs
-import posting
+from posting import (
+    periodic_post,
+    post
+)
 from adminstat import (
     get_admin_uns,
     load_stat
@@ -48,90 +50,7 @@ def general_admin_required(func):
     return wrapper
 
 
-async def forward_saved_message(target_message_id: int, target_chat_id: int):
-    messages = msgs.load_messages()
-    BOT_MAPPINGS = os.getenv('BOT_MAPPINGS', '')
-    bots = {}
-    if BOT_MAPPINGS:
-        for mapping in BOT_MAPPINGS.split(','):
-            if ':' in mapping:
-                parts = mapping.split(':')
-                if len(parts) >= 2:
-                    token = ':'.join(parts[:-1])
-                    username = parts[-1]
-                    bots[username] = token
 
-    for msg in messages:
-        if msg['message_id'] == target_message_id:
-            if msg['username'] not in bots:
-                logger.info("Используем основного бота")
-                try:
-                    if msg.get('is_forwarded_from_channel', True):
-                        forwarded_msg = await bot.forward_message(
-                            chat_id=target_chat_id,
-                            from_chat_id=msg['chat_id'],
-                            message_id=msg['message_id']
-                        )
-                    else:
-                        forwarded_msg = await bot.copy_message(
-                            chat_id=target_chat_id,
-                            from_chat_id=msg['chat_id'],
-                            message_id=msg['message_id']
-                        )
-
-                    logger.info(f"Сообщение {target_message_id} переслано в канал")
-                    msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)
-                    return True
-
-                except Exception as e:
-                    logger.error(f"Ошибка при пересылке сообщения {target_message_id}: {e}")
-                    return False
-            else:
-                logger.info("Используем именного бота")
-                other_bot_token = bots[msg['username']]
-                api_url = f"https://api.telegram.org/bot{other_bot_token}"
-
-                try:
-                    if msg.get('is_forwarded_from_channel', True):
-                        method = "forwardMessage"
-                    else:
-                        method = "copyMessage"
-
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(
-                            f"{api_url}/{method}",
-                            json={
-                                "chat_id": target_chat_id,
-                                "from_chat_id": msg['chat_id'],
-                                "message_id": msg['message_id'],
-                            },
-                            ssl=ssl_context
-                        ) as response:
-                            data = await response.json()
-
-                            if not data.get("ok", False):
-                                logger.error(f"Ошибка Telegram API при отправке другим ботом: {data}")
-                                return False
-
-                            forwarded_msg_id = data["result"]["message_id"]
-
-                    logger.info(f"Сообщение {target_message_id} отправлено ботом @{msg['username']}")
-
-                    msgs.update_message_posted(
-                        msg['message_id'],
-                        msg['chat_id'],
-                        forwarded_msg_id
-                    )
-
-                    return True
-
-                except Exception as e:
-                    logger.error(f"Ошибка при отправке другим ботом: {e}")
-                    return False
-
-
-    logger.warning(f"Сообщение {target_message_id} не найдено")
-    return False
 
 
 @dp.message(lambda message: (message.photo or message.document or message.video) and (message.text is None or not message.text.startswith('/')))
@@ -140,6 +59,8 @@ async def handle_source_message(message: types.Message):
     message_data = msgs.save_message_to_db(message)
     await message.answer(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
     logger.info(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
+    from posting import new_message_event
+    new_message_event.set()
 
 
 @dp.message(Command("menu"))
@@ -176,7 +97,7 @@ async def post_message(message: types.Message):
             return
         
         message_id = int(args[1])
-        success = await posting.post(message_id)
+        success = await post(message_id)
         
         if success:
             await message.answer(f"Сообщение {message_id} переслано в канал")
@@ -210,17 +131,21 @@ async def set_time(message: types.Message):
         if start_time >= end_time:
             await message.answer("Время начала должно быть меньше времени конца")
             return
-        with open('config.py', 'r+') as f:
-                lines = f.readlines()
-                f.seek(0)
-                for line in lines:
-                    if line.startswith('START_HOUR'):
-                        f.write(f"START_HOUR, START_MINUTE = {start_hour}, {start_min}\n")
-                    elif line.startswith('END_HOUR'):
-                        f.write(f"END_HOUR, END_MINUTE = {end_hour}, {end_min}\n")
-                    else:
-                        f.write(line)
-                f.truncate()
+        with open('.env', 'r') as f:
+            lines = f.readlines()
+
+        with open('.env', 'w') as f:
+            for line in lines:
+                if line.startswith('START_HOUR'):
+                    f.write(f"START_HOUR = {start_hour}\n")
+                elif line.startswith('START_MINUTE'):
+                    f.write(f"START_MINUTE = {start_min}\n")
+                elif line.startswith('END_HOUR'):
+                    f.write(f"END_HOUR = {end_hour}\n")
+                elif line.startswith('END_MINUTE'):
+                    f.write(f"END_MINUTE = {end_min}\n")
+                else:
+                    f.write(line)
         await message.answer(f"Время постинга установлено: {start_hour:02d}:{start_min:02d} - {end_hour:02d}:{end_min:02d}")
     except ValueError:
         await message.answer("Неверный формат времени. Используйте HH:MM")
@@ -240,15 +165,15 @@ async def set_interval(message: types.Message):
         if interval <= 0:
             await message.answer("Интервал должен быть положительным числом")
             return
-        with open('config.py', 'r+') as f:
-                lines = f.readlines()
-                f.seek(0)
-                for line in lines:
-                    if line.startswith('POSTING_INTERVAL'):
-                        f.write (f'POSTING_INTERVAL = {interval}\n')
-                    else:
-                        f.write(line)
-                f.truncate()
+        with open('.env', 'r') as f:
+            lines = f.readlines()
+
+        with open('.env', 'w') as f:
+            for line in lines:
+                if line.startswith('POSTING_INTERVAL'):
+                    f.write(f'POSTING_INTERVAL = {interval}\n')
+                else:
+                    f.write(line)
         await message.answer(f"Интервал постинга установлен: {interval} часов")
     except ValueError:
         await message.answer("Интервал должен быть целым числом")
@@ -268,15 +193,15 @@ async def set_reset_stat_time(message: types.Message):
         if days <= 0:
             await message.answer("Интервал должен быть положительным числом")
             return
-        with open('config.py', 'r+') as f:
-                lines = f.readlines()
-                f.seek(0)
-                for line in lines:
-                    if line.startswith('RESET_INTERVAL_DAYS'):
-                        f.write(f"RESET_INTERVAL_DAYS = {days}\n")
-                    else:
-                        f.write(line)
-                f.truncate()
+        with open('.env', 'r') as f:
+            lines = f.readlines()
+
+        with open('.env', 'w') as f:
+            for line in lines:
+                if line.startswith('RESET_INTERVAL_DAYS'):
+                    f.write(f"RESET_INTERVAL_DAYS = {days}\n")
+                else:
+                    f.write(line)
         await message.answer(f"Интервал сброса статистики установлен: {days} дней")
     except ValueError:
         await message.answer("Интервал должен быть целым числом")
@@ -513,7 +438,7 @@ async def delete_bot(message: types.Message):
 
 
 async def main():
-    asyncio.create_task(posting.periodic_post())
+    asyncio.create_task(periodic_post())
     await dp.start_polling(bot)
     logger.info("Бот запущен")
 
