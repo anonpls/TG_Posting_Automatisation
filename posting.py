@@ -59,7 +59,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
                         )
 
                     logger.info(f"Сообщение {target_message_id} переслано в канал")
-                    msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)
+                    msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)                
                     return True
 
                 except Exception as e:
@@ -94,7 +94,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
                             forwarded_msg_id = data["result"]["message_id"]
 
                     logger.info(f"Сообщение {target_message_id} отправлено ботом @{msg['username']}")
-
+                    
                     msgs.update_message_posted(
                         msg['message_id'],
                         msg['chat_id'],

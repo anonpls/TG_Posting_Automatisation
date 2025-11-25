@@ -9,6 +9,7 @@ import certifi
 
 import msgs
 from posting import (
+    forward_saved_message,
     periodic_post,
     post
 )
@@ -98,7 +99,7 @@ async def post_message(message: types.Message):
             return
 
         message_id = int(args[1])
-        success = await post(message_id)
+        success = await forward_saved_message(message_id, CHANNEL_CHAT_ID)
 
         if success:
             await message.answer(f"Сообщение {message_id} переслано в канал")
@@ -268,7 +269,7 @@ async def info_command(message: types.Message):
     response = "Сохраненные сообщения:\n\n"
     for msg in messages:
         status = "Опубликовано" if msg['posted'] else "Не опубликовано"
-        response += f"{msg['message_id']} | {msg['username']} | {status}\n"
+        response += f"{msg['message_id']} | {msg['current_message_id']} | {msg['username']} | {status}\n"
         response += "─" * 40 + "\n"
 
     await message.answer(response)
