@@ -197,6 +197,7 @@ async def periodic_post():
                         f.write(line)
         if time(config.START_HOUR, config.START_MINUTE) <= now <= time(config.END_HOUR, config.END_MINUTE):
             await post_random()
+            await msgs.collect_message_stats()
             await asyncio.sleep(config.POSTING_INTERVAL)
         else:
             await asyncio.sleep(60)

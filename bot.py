@@ -266,10 +266,11 @@ async def clear_message(message: types.Message):
 async def info_command(message: types.Message):
     logger.info(f"Команда /info использована пользователем @{message.from_user.username}")
     messages = msgs.load_all_messages()
-    response = "Сохраненные сообщения:\n\n"
+    response = "Сохраненные сообщения:\n\n" \
+    "SavedID | PostedID | Автор | Просмотры | Реакции | Статус\n"
     for msg in messages:
         status = "Опубликовано" if msg['posted'] else "Не опубликовано"
-        response += f"{msg['message_id']} | {msg['current_message_id']} | {msg['username']} | {status}\n"
+        response += f"{msg['message_id']} | {msg['current_message_id']} | {msg['username']} | {msg['views']} | {msg['reactions']} | {status}\n"
         response += "─" * 40 + "\n"
 
     await message.answer(response)

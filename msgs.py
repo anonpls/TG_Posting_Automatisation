@@ -2,6 +2,8 @@ import sqlite3
 import logging
 from aiogram import types
 import os
+from telethon import TelegramClient
+from dotenv import load_dotenv
 
 MESSAGES_DB = "messages.db"
 
@@ -22,6 +24,11 @@ def init_messages_db():
             PRIMARY KEY (message_id, chat_id)
         )
     ''')
+    try:
+        cursor.execute('ALTER TABLE messages ADD COLUMN views INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE messages ADD COLUMN reactions INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -30,20 +37,20 @@ def load_messages():
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('SELECT message_id, chat_id, username, current_message_id, posted, is_forwarded_from_channel FROM messages WHERE posted = FALSE')
+    cursor.execute('SELECT message_id, chat_id, username, current_message_id, posted, is_forwarded_from_channel, views, reactions FROM messages WHERE posted = FALSE')
     rows = cursor.fetchall()
     conn.close()
-    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'current_message_id': row[3], 'posted': bool(row[4]), 'is_forwarded_from_channel': bool(row[5])} for row in rows]
+    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'current_message_id': row[3], 'posted': bool(row[4]), 'is_forwarded_from_channel': bool(row[5]), 'views': row[6], 'reactions': row[7]} for row in rows]
 
 
 def load_all_messages():
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('SELECT message_id, chat_id, username, current_message_id, posted, is_forwarded_from_channel FROM messages')
+    cursor.execute('SELECT message_id, chat_id, username, current_message_id, posted, is_forwarded_from_channel, views, reactions FROM messages')
     rows = cursor.fetchall()
     conn.close()
-    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'current_message_id': row[3], 'posted': bool(row[4]), 'is_forwarded_from_channel': bool(row[5])} for row in rows]
+    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'current_message_id': row[3], 'posted': bool(row[4]), 'is_forwarded_from_channel': bool(row[5]), 'views': row[6], 'reactions': row[7]} for row in rows]
 
 
 def save_messages(messages):
@@ -51,8 +58,8 @@ def save_messages(messages):
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
     for msg in messages:
-        cursor.execute('INSERT OR REPLACE INTO messages (message_id, chat_id, username, current_message_id, posted, is_forwarded_from_channel) VALUES (?, ?, ?, ?, ?, ?)',
-                       (msg['message_id'], msg['chat_id'], msg['username'], msg.get('current_message_id'), msg.get('posted', False), msg.get('is_forwarded_from_channel', False)))
+        cursor.execute('INSERT OR REPLACE INTO messages (message_id, chat_id, username, current_message_id, posted, is_forwarded_from_channel, views, reactions) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                       (msg['message_id'], msg['chat_id'], msg['username'], msg.get('current_message_id'), msg.get('posted', False), msg.get('is_forwarded_from_channel', False), msg.get('views', 0), msg.get('reactions', 0)))
     conn.commit()
     conn.close()
 
@@ -81,8 +88,8 @@ def save_message_to_db(message: types.Message):
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
     is_forwarded_from_channel = message.forward_origin is not None and hasattr(message.forward_origin, 'chat') and message.forward_origin.chat.type in ['channel']
-    cursor.execute('INSERT OR IGNORE INTO messages (message_id, chat_id, username, posted, is_forwarded_from_channel) VALUES (?, ?, ?, FALSE, ?)',
-                   (message.message_id, message.chat.id, message.from_user.username if message.from_user else None, is_forwarded_from_channel))
+    cursor.execute('INSERT OR IGNORE INTO messages (message_id, chat_id, username, posted, is_forwarded_from_channel, views, reactions) VALUES (?, ?, ?, FALSE, ?, ?, ?)',
+                   (message.message_id, message.chat.id, message.from_user.username if message.from_user else None, is_forwarded_from_channel, 0, 0))
     conn.commit()
     conn.close()
 
@@ -96,7 +103,9 @@ def save_message_to_db(message: types.Message):
         'chat_id': message.chat.id,
         'username': message.from_user.username if message.from_user else None,
         'posted': False,
-        'is_forwarded_from_channel': is_forwarded_from_channel
+        'is_forwarded_from_channel': is_forwarded_from_channel,
+        'views': 0, 
+        'reactions': 0
     }
 
 
@@ -108,3 +117,43 @@ def update_message_posted(message_id, chat_id, current_message_id):
                    (current_message_id, message_id, chat_id))
     conn.commit()
     conn.close()
+
+
+async def collect_message_stats():
+    load_dotenv(override=True)
+    api_id = os.getenv('CORE_API_ID')
+    api_hash = os.getenv('CORE_API_HASH')
+    channel_id = int(os.getenv('CHANNEL_ID'))
+
+    if not api_id or not api_hash:
+        logger.error("CORE_API_ID or CORE_API_HASH not found in .env")
+        return
+
+    async with TelegramClient('session', int(api_id), api_hash) as client:
+        init_messages_db()
+        conn = sqlite3.connect(MESSAGES_DB)
+        cursor = conn.cursor()
+        cursor.execute('SELECT message_id, chat_id, current_message_id FROM messages WHERE posted = TRUE AND current_message_id IS NOT NULL')
+        published_messages = cursor.fetchall()
+        conn.close()
+
+        for msg_id, chat_id, current_msg_id in published_messages:
+            try:
+                message = await client.get_messages(channel_id, ids=current_msg_id)
+                if message:
+                    views = getattr(message, 'views', 0) or 0
+                    reactions_count = 0
+                    if hasattr(message, 'reactions') and message.reactions:
+                        reactions_count = sum(r.count for r in message.reactions.results) if message.reactions.results else 0
+
+                    conn = sqlite3.connect(MESSAGES_DB)
+                    cursor = conn.cursor()
+                    cursor.execute('UPDATE messages SET views = ?, reactions = ? WHERE message_id = ? AND chat_id = ?',
+                                   (views, reactions_count, msg_id, chat_id))
+                    conn.commit()
+                    conn.close()
+                    logger.info(f"Updated stats for message {current_msg_id}: views={views}, reactions={reactions_count}")
+                else:
+                    logger.warning(f"Message {current_msg_id} not found in channel")
+            except Exception as e:
+                logger.error(f"Error fetching stats for message {current_msg_id}: {e}")
