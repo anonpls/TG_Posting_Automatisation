@@ -34,7 +34,7 @@ def init_statistics_db():
         postcount = cursor.fetchone()[0]
         cursor.execute('SELECT COUNT(*) FROM messages WHERE username = ? AND posted = 0', (admin,))
         queuedcount = cursor.fetchone()[0]
-        cursor.execute('INSERT OR IGNORE INTO statistics (username, postcount, queuedcount, viewstotal, reactionstotal) VALUES (?, ?, ?, 0, 0)', (admin, postcount, queuedcount))
+        cursor.execute('INSERT OR REPLACE INTO statistics (username, postcount, queuedcount, viewstotal, reactionstotal) VALUES (?, ?, ?, 0, 0)', (admin, postcount, queuedcount))
     conn.commit()
     conn.close()
 
