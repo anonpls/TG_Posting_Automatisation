@@ -219,9 +219,9 @@ async def set_reset_stat_time(message: types.Message):
 async def stat_command(message: types.Message):
     logger.info(f"Команда /stat использована пользователем @{message.from_user.username}")
     stat = load_stat()
-    response = "Статистика по админам: (юзернейм|выложенные|в очереди)\n\n"
+    response = "Статистика по админам: \n(юзернейм|выложенные|в очереди|просмотры|реакции)\n\n"
     for adm in stat:
-        response += f"{adm['username']} | {adm['postcount']} | {adm['queuedcount']}\n"
+        response += f"{adm['username']} | {adm['postcount']} | {adm['queuedcount']} | {adm['viewstotal']} | {adm['reactionstotal']}\n"
         response += "─" * 40 + "\n"
     await message.answer(response)
 

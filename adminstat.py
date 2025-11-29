@@ -4,6 +4,7 @@ import logging
 from dotenv import load_dotenv
 
 STATISTICS_DB = "statistics.db"
+MESSAGES_DB = "messages.db"
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +22,19 @@ def init_statistics_db():
         CREATE TABLE IF NOT EXISTS statistics (
             username TEXT PRIMARY KEY,
             postcount INTEGER DEFAULT 0,
-            queuedcount INTEGER DEFAULT 0
+            queuedcount INTEGER DEFAULT 0,
+            viewstotal INTEGER DEFAULT 0,
+            reactionstotal INTEGER DEFAULT 0
         )
     ''')
-    try:
-        cursor.execute('ALTER TABLE statistics ADD COLUMN queuedcount INTEGER DEFAULT 0')
-    except sqlite3.OperationalError:
-        pass
+    cursor.execute(f'ATTACH DATABASE "{MESSAGES_DB}" AS messages')
+    admins = get_admin_uns()
+    for admin in admins:
+        cursor.execute('SELECT COUNT(*) FROM messages WHERE username = ? AND posted = 1', (admin,))
+        postcount = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM messages WHERE username = ? AND posted = 0', (admin,))
+        queuedcount = cursor.fetchone()[0]
+        cursor.execute('INSERT OR IGNORE INTO statistics (username, postcount, queuedcount, viewstotal, reactionstotal) VALUES (?, ?, ?, 0, 0)', (admin, postcount, queuedcount))
     conn.commit()
     conn.close()
 
@@ -52,13 +59,16 @@ def migrate_statistics_from_json():
 
 def load_stat():
     init_statistics_db()
+    admins = get_admin_uns()
+    for admin in admins:
+        update_views_reactions_count(admin)
     migrate_statistics_from_json()
     conn = sqlite3.connect(STATISTICS_DB)
     cursor = conn.cursor()
-    cursor.execute('SELECT username, postcount, queuedcount FROM statistics')
+    cursor.execute('SELECT username, postcount, queuedcount, viewstotal, reactionstotal FROM statistics')
     rows = cursor.fetchall()
     conn.close()
-    return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2]} for row in rows]
+    return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2], 'viewstotal': row[3], 'reactionstotal': row[4]} for row in rows]
 
 
 def save_stat(stat):
@@ -95,6 +105,23 @@ def decrement_queued_to_count(admin):
     conn = sqlite3.connect(STATISTICS_DB)
     cursor = conn.cursor()
     cursor.execute('UPDATE statistics SET queuedcount = queuedcount - 1 WHERE username = ? AND queuedcount > 0', (admin,))
+    conn.commit()
+    conn.close()
+
+def update_views_reactions_count(admin):
+    init_statistics_db()
+    conn = sqlite3.connect(STATISTICS_DB)
+    cursor = conn.cursor()
+    cursor.execute(f'ATTACH DATABASE "{MESSAGES_DB}" AS messages')
+    cursor.execute('''
+    UPDATE statistics
+    SET viewstotal = COALESCE((
+        SELECT SUM(views) FROM messages WHERE messages.username = statistics.username
+    ), 0),
+    reactionstotal = COALESCE((
+        SELECT SUM(reactions) FROM messages WHERE messages.username = statistics.username
+    ), 0)
+    WHERE username = ?''', (admin,))
     conn.commit()
     conn.close()
 
