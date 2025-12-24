@@ -193,7 +193,7 @@ async def periodic_post():
     while True:
         import config
         importlib.reload(config)
-        now = datetime.now().time()
+        now = (datetime.now() + timedelta(hours = 3)).time()
         today = datetime.now().date()
         if (datetime.now() - config.LAST_RESET_DATE).days >= config.RESET_INTERVAL_DAYS:
             from adminstat import reset_statistics
