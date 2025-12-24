@@ -58,6 +58,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
                             message_id=msg['message_id']
                         )
 
+                    await bot.send_message(msg['chat_id'], f"Сообщение {target_message_id} переслано в канал")
                     logger.info(f"Сообщение {target_message_id} переслано в канал")
                     msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)                
                     return True
@@ -67,8 +68,8 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
                     return False
             else:
                 other_bot_token = bots[msg['username']]
-                api_url = f"https://api.telegram.org/bot{other_bot_token}"
-
+                namebot_api_url = f"https://api.telegram.org/bot{other_bot_token}"
+                genbot_api_url = f"https://api.telegram.org/bot{os.getenv("BOT_TOKEN")}"
                 try:
                     if msg.get('is_forwarded_from_channel', True):
                         method = "forwardMessage"
@@ -77,7 +78,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
 
                     async with aiohttp.ClientSession() as session:
                         async with session.post(
-                            f"{api_url}/{method}",
+                            f"{namebot_api_url}/{method}",
                             json={
                                 "chat_id": target_chat_id,
                                 "from_chat_id": msg['chat_id'],
@@ -92,7 +93,20 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
                                 return False
 
                             forwarded_msg_id = data["result"]["message_id"]
+                        
+                        async with session.post(
+                            f"{genbot_api_url}/sendMessage",
+                            json={
+                                "chat_id": msg['chat_id'],
+                                "text": f"Сообщение {msg['message_id']} переслано в канал"
+                            }
+                        ) as response:
+                            data = await response.json()
+                            if not data.get("ok", False):
+                                logger.error(f"Ошибка Telegram API при отправке другим ботом: {data}")
+                                return False
 
+                    
                     logger.info(f"Сообщение {target_message_id} отправлено ботом @{msg['username']}")
                     
                     msgs.update_message_posted(

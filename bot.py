@@ -109,6 +109,33 @@ async def post_message(message: types.Message):
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
 
+@dp.message(Command("delmsg"))
+@admin_required
+async def delete_message(message: types.Message):
+    logger.info(f"Команда /delmsg использована пользователем @{message.from_user.username} с аргументом {message.text.split()[1] if len(message.text.split()) > 1 else 'нет'}")
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            await message.answer(
+                "Используйте: /delmsg <message_id>\n\n"
+                "Пример: /delmsg 123\n"
+                "Список сообщений: /info"
+            )
+            return
+        try:
+            msg_id = int(args[1])
+            if msgs.clear_message(msg_id, message.from_user.username) > 0:
+                logger.info(f"Сообщение {msg_id} удалено!")
+                await message.answer(f"Сообщение {msg_id} удалено!")
+            else: 
+                logger.warning(f"Сообщение {msg_id} удалено!")
+                await message.answer(f"Не удалось удалить сообщение")
+        except Exception as e:
+            logger.error(f"Вводимый параметр должен быть числом! {e}")
+            await message.answer(f"Вводимый параметр должен быть числом!")
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+
 
 @dp.message(Command("settime"))
 @general_admin_required

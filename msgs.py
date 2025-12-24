@@ -73,6 +73,18 @@ def clear_messages():
     conn.close()
 
 
+def clear_message(msg_id, adm):
+    init_messages_db()
+    conn = sqlite3.connect(MESSAGES_DB)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM messages WHERE message_id = ? AND username = ?', 
+                   (msg_id, adm))
+    num = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return num
+
+
 def clear_posted_messages():
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
@@ -128,32 +140,34 @@ async def collect_message_stats():
     if not api_id or not api_hash:
         logger.error("CORE_API_ID or CORE_API_HASH not found in .env")
         return
+    try:
+        async with TelegramClient('session', int(api_id), api_hash) as client:
+            init_messages_db()
+            conn = sqlite3.connect(MESSAGES_DB)
+            cursor = conn.cursor()
+            cursor.execute('SELECT message_id, chat_id, current_message_id FROM messages WHERE posted = TRUE AND current_message_id IS NOT NULL')
+            published_messages = cursor.fetchall()
+            conn.close()
 
-    async with TelegramClient('session', int(api_id), api_hash) as client:
-        init_messages_db()
-        conn = sqlite3.connect(MESSAGES_DB)
-        cursor = conn.cursor()
-        cursor.execute('SELECT message_id, chat_id, current_message_id FROM messages WHERE posted = TRUE AND current_message_id IS NOT NULL')
-        published_messages = cursor.fetchall()
-        conn.close()
+            for msg_id, chat_id, current_msg_id in published_messages:
+                try:
+                    message = await client.get_messages(channel_id, ids=current_msg_id)
+                    if message:
+                        views = getattr(message, 'views', 0) or 0
+                        reactions_count = 0
+                        if hasattr(message, 'reactions') and message.reactions:
+                            reactions_count = sum(r.count for r in message.reactions.results) if message.reactions.results else 0
 
-        for msg_id, chat_id, current_msg_id in published_messages:
-            try:
-                message = await client.get_messages(channel_id, ids=current_msg_id)
-                if message:
-                    views = getattr(message, 'views', 0) or 0
-                    reactions_count = 0
-                    if hasattr(message, 'reactions') and message.reactions:
-                        reactions_count = sum(r.count for r in message.reactions.results) if message.reactions.results else 0
-
-                    conn = sqlite3.connect(MESSAGES_DB)
-                    cursor = conn.cursor()
-                    cursor.execute('UPDATE messages SET views = ?, reactions = ? WHERE message_id = ? AND chat_id = ?',
-                                   (views, reactions_count, msg_id, chat_id))
-                    conn.commit()
-                    conn.close()
-                    logger.info(f"Updated stats for message {current_msg_id}: views={views}, reactions={reactions_count}")
-                else:
-                    logger.warning(f"Message {current_msg_id} not found in channel")
-            except Exception as e:
-                logger.error(f"Error fetching stats for message {current_msg_id}: {e}")
+                        conn = sqlite3.connect(MESSAGES_DB)
+                        cursor = conn.cursor()
+                        cursor.execute('UPDATE messages SET views = ?, reactions = ? WHERE message_id = ? AND chat_id = ?',
+                                    (views, reactions_count, msg_id, chat_id))
+                        conn.commit()
+                        conn.close()
+                        logger.info(f"Updated stats for message {current_msg_id}: views={views}, reactions={reactions_count}")
+                    else:
+                        logger.warning(f"Message {current_msg_id} not found in channel")
+                except Exception as e:
+                    logger.error(f"Error fetching stats for message {current_msg_id}: {e}")
+    except:
+        logger.error("CORE_API_ID or CORE_API_HASH not found in .env")
