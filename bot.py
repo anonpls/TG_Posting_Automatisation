@@ -55,6 +55,7 @@ def general_admin_required(func):
 @admin_required
 async def handle_source_message(message: types.Message):
     message_data = msgs.save_message_to_db(message)
+    logger.info(message_data['media_group'])
     await message.answer(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
     logger.info(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
     from posting import new_message_event

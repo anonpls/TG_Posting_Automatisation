@@ -42,25 +42,31 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
 
     for msg in messages:
         if msg['message_id'] == target_message_id:
+            if msg['media_group']:
+                msg_to_send = msgs.get_media_group_ids(msg['media_group'])
+            else:
+                msg_to_send = [msg['message_id']]
             if msg['username'] not in bots:
                 try:
                     from bot import bot
                     if msg.get('is_forwarded_from_channel', True):
-                        forwarded_msg = await bot.forward_message(
+                        forwarded_msg = await bot.forward_messages(
                             chat_id=target_chat_id,
                             from_chat_id=msg['chat_id'],
-                            message_id=msg['message_id']
+                            message_ids=msg_to_send
                         )
                     else:
-                        forwarded_msg = await bot.copy_message(
+                        forwarded_msg = await bot.copy_messages(
                             chat_id=target_chat_id,
                             from_chat_id=msg['chat_id'],
-                            message_id=msg['message_id']
+                            message_ids=msg_to_send
                         )
 
                     await bot.send_message(msg['chat_id'], f"Сообщение {target_message_id} переслано в канал")
                     logger.info(f"Сообщение {target_message_id} переслано в канал")
-                    msgs.update_message_posted(msg['message_id'], msg['chat_id'], forwarded_msg.message_id)                
+                    logger.info(forwarded_msg[0].message_id)
+                    for fmsg in forwarded_msg:
+                        msgs.update_message_posted(target_message_id, target_chat_id, fmsg.message_id)
                     return True
 
                 except Exception as e:
@@ -72,9 +78,9 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
                 genbot_api_url = f"https://api.telegram.org/bot{os.getenv("BOT_TOKEN")}"
                 try:
                     if msg.get('is_forwarded_from_channel', True):
-                        method = "forwardMessage"
+                        method = "forwardMessages"
                     else:
-                        method = "copyMessage"
+                        method = "copyMessages"
 
                     async with aiohttp.ClientSession() as session:
                         async with session.post(
@@ -82,7 +88,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
                             json={
                                 "chat_id": target_chat_id,
                                 "from_chat_id": msg['chat_id'],
-                                "message_id": msg['message_id'],
+                                "message_ids": msg_to_send,
                             },
                             ssl=ssl_context
                         ) as response:
@@ -92,7 +98,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
                                 logger.error(f"Ошибка Telegram API при отправке другим ботом: {data}")
                                 return False
 
-                            forwarded_msg_id = data["result"]["message_id"]
+                            forwarded_msg = data["result"]
                         
                         async with session.post(
                             f"{genbot_api_url}/sendMessage",
@@ -108,12 +114,12 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
 
                     
                     logger.info(f"Сообщение {target_message_id} отправлено ботом @{msg['username']}")
-                    
-                    msgs.update_message_posted(
-                        msg['message_id'],
-                        msg['chat_id'],
-                        forwarded_msg_id
-                    )
+                    for fmsg in forwarded_msg:
+                        msgs.update_message_posted(
+                            target_message_id,
+                            target_chat_id,
+                            fmsg['message_id']
+                        )
 
                     return True
 
@@ -193,7 +199,7 @@ async def periodic_post():
     while True:
         import config
         importlib.reload(config)
-        now = (datetime.now() + timedelta(hours = 3)).time()
+        now = (datetime.now()).time()
         today = datetime.now().date()
         if (datetime.now() - config.LAST_RESET_DATE).days >= config.RESET_INTERVAL_DAYS:
             from adminstat import reset_statistics
