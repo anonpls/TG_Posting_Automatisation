@@ -26,10 +26,11 @@ new_message_event = asyncio.Event()
 is_waiting_for_message = False
 
 
-async def forward_saved_message(target_message_id: int, target_chat_id: int, admin_username=None):
+async def forward_saved_message(target_message_id: int, target_chat_id: int):
 
     messages = msgs.load_messages()
     BOT_MAPPINGS = os.getenv('BOT_MAPPINGS', '')
+    mgid = ''
     bots = {}
     if BOT_MAPPINGS:
         for mapping in BOT_MAPPINGS.split(','):
@@ -44,6 +45,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
         if msg['message_id'] == target_message_id:
             if msg['media_group']:
                 msg_to_send = msgs.get_media_group_ids(msg['media_group'])
+                mgid = f' - медиа группа {msg["media_group"]}'
             else:
                 msg_to_send = [msg['message_id']]
             if msg['username'] not in bots:
@@ -62,11 +64,11 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
                             message_ids=msg_to_send
                         )
 
-                    await bot.send_message(msg['chat_id'], f"Сообщение {target_message_id} переслано в канал")
-                    logger.info(f"Сообщение {target_message_id} переслано в канал")
+                    await bot.send_message(msg['chat_id'], f"Сообщение {target_message_id}{mgid} переслано в канал")
+                    logger.info(f"Сообщение {target_message_id}{mgid} переслано в канал")
                     logger.info(forwarded_msg[0].message_id)
-                    for fmsg in forwarded_msg:
-                        msgs.update_message_posted(target_message_id, target_chat_id, fmsg.message_id)
+                    for msgts, fmsg in zip(msg_to_send, forwarded_msg):
+                        msgs.update_message_posted(msgts, msg['chat_id'], fmsg.message_id)
                     return True
 
                 except Exception as e:
@@ -114,10 +116,10 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int, adm
 
                     
                     logger.info(f"Сообщение {target_message_id} отправлено ботом @{msg['username']}")
-                    for fmsg in forwarded_msg:
+                    for msgts, fmsg in zip(msg_to_send, forwarded_msg):
                         msgs.update_message_posted(
-                            target_message_id,
-                            target_chat_id,
+                            msgts,
+                            msg['chat_id'],
                             fmsg['message_id']
                         )
 

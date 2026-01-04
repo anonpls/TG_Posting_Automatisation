@@ -37,8 +37,10 @@ def get_media_group_ids(mg_id):
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('SELECT message_id FROM messages WHERE media_group = ?', (mg_id))
+    cursor.execute('SELECT message_id FROM messages WHERE media_group = ?', 
+                   (mg_id,))
     rows = cursor.fetchall()
+    print(rows)
     conn.close()
     return [row[0] for row in rows]
 
@@ -139,6 +141,7 @@ def update_message_posted(message_id, chat_id, current_message_id):
                    (current_message_id, message_id, chat_id))
     conn.commit()
     conn.close()
+    logger.info(f'Сообщение {message_id} обновлено как опубликованное с новым ID {current_message_id}')
 
 
 async def collect_message_stats():

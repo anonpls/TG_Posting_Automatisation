@@ -108,7 +108,7 @@ def decrement_queued_to_count(admin):
     conn.commit()
     conn.close()
 
-def update_views_reactions_count(admin):
+def update_views_reactions_count(admin): # проблема может быть здесь
     init_statistics_db()
     conn = sqlite3.connect(STATISTICS_DB)
     cursor = conn.cursor()
