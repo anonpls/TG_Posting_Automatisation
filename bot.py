@@ -15,7 +15,8 @@ from posting import (
 )
 from adminstat import (
     get_admin_uns,
-    load_stat
+    load_stat,
+    export_admin_stat_csv
 )
 
 ssl_context = ssl.create_default_context(cafile=certifi.where())
@@ -245,13 +246,15 @@ async def set_reset_stat_time(message: types.Message):
 @dp.message(Command("stat"))
 @general_admin_required
 async def stat_command(message: types.Message):
-    logger.info(f"Команда /stat использована пользователем @{message.from_user.username}")
     stat = load_stat()
-    response = "Статистика по админам: \n(юзернейм|выложенные|в очереди|просмотры|реакции)\n\n"
-    for adm in stat:
-        response += f"{adm['username']} | {adm['postcount']} | {adm['queuedcount']} | {adm['viewstotal']} | {adm['reactionstotal']}\n"
-        response += "─" * 40 + "\n"
-    await message.answer(response)
+    filename = export_admin_stat_csv(stat)
+
+    await message.answer_document(
+        types.FSInputFile(filename),
+        caption="📊 Статистика по админам"
+    )
+
+    os.remove(filename)
 
 
 @dp.message(Command("config"))
@@ -293,15 +296,15 @@ async def clear_message(message: types.Message):
 @admin_required
 async def info_command(message: types.Message):
     logger.info(f"Команда /info использована пользователем @{message.from_user.username}")
-    messages = msgs.load_all_messages()
-    response = "Сохраненные сообщения:\n\n" \
-    "SavedID | PostedID | Автор | Просмотры | Реакции | Статус\n"
-    for msg in messages:
-        status = "Опубликовано" if msg['posted'] else "Не опубликовано"
-        response += f"{msg['message_id']} | {msg['current_message_id']} | {msg['username']} | {msg['views']} | {msg['reactions']} | {status}\n"
-        response += "─" * 40 + "\n"
+    stat = msgs.load_all_messages()
+    filename = msgs.export_msgs_csv(stat)
 
-    await message.answer(response)
+    await message.answer_document(
+        types.FSInputFile(filename),
+        caption="📊 Статистика по сообщениям"
+    )
+
+    os.remove(filename)
 
 
 @dp.message(Command("addadm"))

@@ -2,6 +2,8 @@ import sqlite3
 import os
 import logging
 from dotenv import load_dotenv
+from datetime import datetime
+import csv
 
 STATISTICS_DB = "statistics.db"
 MESSAGES_DB = "messages.db"
@@ -39,30 +41,31 @@ def init_statistics_db():
     conn.close()
 
 
-def migrate_statistics_from_json():
-    import json
-    if os.path.exists("statistics.json"):
-        try:
-            with open("statistics.json", 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            conn = sqlite3.connect(STATISTICS_DB)
-            cursor = conn.cursor()
-            for item in data:
-                cursor.execute('INSERT OR REPLACE INTO statistics (username, postcount) VALUES (?, ?)',
-                               (item['username'], item['postcount']))
-            conn.commit()
-            conn.close()
-            os.rename("statistics.json", "statistics.json.backup")
-        except Exception as e:
-            logger.error(f"Error migrating statistics: {e}")
+def export_admin_stat_csv(stat):
+    filename = f"admin_stat_{datetime.now().date()}.csv"
+    with open(filename, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter = ';')
+        writer.writerow([
+            "username",
+            "posts",
+            "queued",
+            "views",
+            "reactions"
+        ])
+        for adm in stat:
+            writer.writerow([
+                adm["username"],
+                adm["postcount"],
+                adm["queuedcount"],
+                adm["viewstotal"],
+                adm["reactionstotal"]
+            ])
+    return filename
 
 
 def load_stat():
     init_statistics_db()
-    admins = get_admin_uns()
-    for admin in admins:
-        update_views_reactions_count(admin)
-    migrate_statistics_from_json()
+    update_views_reactions_count() # проблема может быть здесь
     conn = sqlite3.connect(STATISTICS_DB)
     cursor = conn.cursor()
     cursor.execute('SELECT username, postcount, queuedcount, viewstotal, reactionstotal FROM statistics')
@@ -108,20 +111,25 @@ def decrement_queued_to_count(admin):
     conn.commit()
     conn.close()
 
-def update_views_reactions_count(admin): # проблема может быть здесь
+def update_views_reactions_count():
     init_statistics_db()
     conn = sqlite3.connect(STATISTICS_DB)
     cursor = conn.cursor()
     cursor.execute(f'ATTACH DATABASE "{MESSAGES_DB}" AS messages')
     cursor.execute('''
-    UPDATE statistics
-    SET viewstotal = COALESCE((
-        SELECT SUM(views) FROM messages WHERE messages.username = statistics.username
-    ), 0),
-    reactionstotal = COALESCE((
-        SELECT SUM(reactions) FROM messages WHERE messages.username = statistics.username
-    ), 0)
-    WHERE username = ?''', (admin,))
+        UPDATE statistics
+        SET
+        viewstotal = COALESCE((
+            SELECT SUM(m.views)
+            FROM messages.messages m
+            WHERE m.username = statistics.username
+        ), 0),
+        reactionstotal = COALESCE((
+            SELECT SUM(m.reactions)
+            FROM messages.messages m
+            WHERE m.username = statistics.username
+        ), 0)
+    ''')
     conn.commit()
     conn.close()
 

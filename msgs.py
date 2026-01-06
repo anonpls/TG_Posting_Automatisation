@@ -4,6 +4,8 @@ from aiogram import types
 import os
 from telethon import TelegramClient
 from dotenv import load_dotenv
+import csv
+from datetime import datetime
 
 MESSAGES_DB = "messages.db"
 
@@ -43,6 +45,31 @@ def get_media_group_ids(mg_id):
     print(rows)
     conn.close()
     return [row[0] for row in rows]
+
+
+def export_msgs_csv(stat):
+    filename = f"msgs_{datetime.now().date()}.csv"
+    with open(filename, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter = ';')
+        writer.writerow([
+            "message_id",
+            "current_message_id",
+            "username",
+            "views",
+            "reactions",
+            "posted"
+        ])
+        for msg in stat:
+            writer.writerow([
+                msg["message_id"],
+                msg["current_message_id"],
+                msg["username"],
+                msg["views"],
+                msg["reactions"],
+                msg["posted"]
+            ])
+    return filename
+
 
 def load_messages():
     init_messages_db()
