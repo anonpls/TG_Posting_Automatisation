@@ -17,6 +17,40 @@ def get_admin_uns():
     return ADMIN_UNS
 
 
+def init_admin_settings():
+    conn = sqlite3.connect(STATISTICS_DB)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS admin_settings (
+            username TEXT PRIMARY KEY,
+            media_group_mode BOOLEAN DEFAULT 1
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def set_media_group_mode(admin, mode: bool):
+    init_admin_settings()
+    conn = sqlite3.connect(STATISTICS_DB)
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO admin_settings (username, media_group_mode) VALUES (?, ?)', (admin, int(mode)))
+    conn.commit()
+    conn.close()
+
+
+def get_media_group_mode(admin) -> bool:
+    init_admin_settings()
+    conn = sqlite3.connect(STATISTICS_DB)
+    cursor = conn.cursor()
+    cursor.execute('SELECT media_group_mode FROM admin_settings WHERE username = ?', (admin,))
+    row = cursor.fetchone()
+    conn.close()
+    if row is None: #вкл по умолч
+        return True
+    return bool(row[0])
+
+
 def init_statistics_db():
     conn = sqlite3.connect(STATISTICS_DB)
     cursor = conn.cursor()

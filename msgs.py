@@ -6,6 +6,7 @@ from telethon import TelegramClient
 from dotenv import load_dotenv
 import csv
 from datetime import datetime
+import adminstat
 
 MESSAGES_DB = "messages.db"
 
@@ -135,28 +136,34 @@ def clear_posted_messages():
 
 def save_message_to_db(message: types.Message):
     init_messages_db()
+
+    media_group_mode = adminstat.get_media_group_mode(message.from_user.username)
+    if hasattr(message, 'media_group_id') and media_group_mode:
+        media_group_id = message.media_group_id
+        mgid = f' - медиа группа {media_group_id}'
+    else: media_group_id = None; mgid = ''
+
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
     is_forwarded_from_channel = message.forward_origin is not None and hasattr(message.forward_origin, 'chat') and message.forward_origin.chat.type in ['channel']
     cursor.execute('INSERT OR IGNORE INTO messages (message_id, chat_id, username, posted, is_forwarded_from_channel, views, reactions, media_group) VALUES (?, ?, ?, FALSE, ?, ?, ?, ?)',
-                   (message.message_id, message.chat.id, message.from_user.username if message.from_user else None, is_forwarded_from_channel, 0, 0, message.media_group_id if hasattr(message, 'media_group_id') else None))
+                   (message.message_id, message.chat.id, message.from_user.username, is_forwarded_from_channel, 0, 0, media_group_id))
     conn.commit()
     conn.close()
 
-    from adminstat import add_queued_to_count
     if message.from_user and message.from_user.username:
-        add_queued_to_count(message.from_user.username)
-        logger.info(f"Сообщение {message.message_id} сохранено в базу данных от пользователя {message.from_user.username}")
+        adminstat.add_queued_to_count(message.from_user.username)
+        logger.info(f"Сообщение {message.message_id}{mgid} сохранено в базу данных от пользователя {message.from_user.username}")
 
     return {
         'message_id': message.message_id,
         'chat_id': message.chat.id,
-        'username': message.from_user.username if message.from_user else None,
+        'username': message.from_user.username,
         'posted': False,
         'is_forwarded_from_channel': is_forwarded_from_channel,
         'views': 0, 
         'reactions': 0,
-        'media_group': message.media_group_id if hasattr(message, 'media_group_id') else None
+        'media_group': media_group_id
     }
 
 

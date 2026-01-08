@@ -56,7 +56,6 @@ def general_admin_required(func):
 @admin_required
 async def handle_source_message(message: types.Message):
     message_data = msgs.save_message_to_db(message)
-    logger.info(message_data['media_group'])
     await message.answer(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
     logger.info(f"Сообщение сохранено в базе данных: ID {message_data['message_id']} от {message_data['username']}")
     from posting import new_message_event
@@ -78,11 +77,12 @@ async def menu_command(message: types.Message):
         "/stat - Просмотр статистики по админам\n"
         "/config - Просмотр текущих настроек конфигурации\n"
         "/clear - Очистка базы данных сообщений\n"
-        "/info - Просмотр сохраненных сообщений\n"
+        "/messages - Просмотр сохраненных сообщений\n"
         "/addadm @<username> - Добавление нового админа\n"
         "/deladm @<username> - Удаление админа\n"
         "/addbot <BOT_TOKEN> <USER_TAG> - Добавление бота для пользователя\n"
         "/deletebot <USER_TAG> - Удаление бота для пользователя"
+        "/groups <on/off> - Включение/выключение медиагрупп для админа"
     )
 
 
@@ -244,7 +244,7 @@ async def set_reset_stat_time(message: types.Message):
 
 
 @dp.message(Command("stat"))
-@general_admin_required
+@admin_required
 async def stat_command(message: types.Message):
     stat = load_stat()
     filename = export_admin_stat_csv(stat)
@@ -292,10 +292,10 @@ async def clear_message(message: types.Message):
         await message.answer(f"Ошибка: {e}")
 
 
-@dp.message(Command("info"))
+@dp.message(Command("messages"))
 @admin_required
-async def info_command(message: types.Message):
-    logger.info(f"Команда /info использована пользователем @{message.from_user.username}")
+async def messages_command(message: types.Message):
+    logger.info(f"Команда /messages использована пользователем @{message.from_user.username}")
     stat = msgs.load_all_messages()
     filename = msgs.export_msgs_csv(stat)
 
@@ -480,6 +480,21 @@ async def delete_bot(message: types.Message):
 
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
+
+
+@dp.message(Command("group"))
+@admin_required
+async def group_command(message: types.Message):
+    args = message.text.split()
+    if len(args) != 2 or args[1].lower() not in ["on", "off"]:
+        await message.answer("Используйте: /group on или /group off")
+        return
+    
+    from adminstat import set_media_group_mode
+    mode = args[1].lower() == "on"
+    set_media_group_mode(message.from_user.username, mode)
+    
+    await message.answer(f"Режим сохранения медиа для @{message.from_user.username} установлен: {'группами' if mode else 'отдельно'}")
 
 
 async def main():

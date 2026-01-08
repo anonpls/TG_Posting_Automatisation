@@ -106,7 +106,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
                             f"{genbot_api_url}/sendMessage",
                             json={
                                 "chat_id": msg['chat_id'],
-                                "text": f"Сообщение {msg['message_id']} переслано в канал"
+                                "text": f"Сообщение {msg['message_id']}{mgid} переслано в канал"
                             }
                         ) as response:
                             data = await response.json()
@@ -115,7 +115,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
                                 return False
 
                     
-                    logger.info(f"Сообщение {target_message_id} отправлено ботом @{msg['username']}")
+                    logger.info(f"Сообщение {target_message_id}{mgid} отправлено ботом @{msg['username']}")
                     for msgts, fmsg in zip(msg_to_send, forwarded_msg):
                         msgs.update_message_posted(
                             msgts,
