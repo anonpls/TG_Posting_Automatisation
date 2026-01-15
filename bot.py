@@ -10,8 +10,7 @@ import certifi
 import msgs
 from posting import (
     forward_saved_message,
-    periodic_post,
-    post
+    periodic_post
 )
 from adminstat import (
     get_admin_uns,
@@ -52,7 +51,7 @@ def general_admin_required(func):
     return wrapper
 
 
-@dp.message(lambda message: (message.photo or message.document or message.video) and (message.text is None or not message.text.startswith('/')))
+@dp.message(lambda message: (message.photo or message.document or message.video or message.audio or message.sticker) and (message.text is None or not message.text.startswith('/')))
 @admin_required
 async def handle_source_message(message: types.Message):
     message_data = msgs.save_message_to_db(message)
