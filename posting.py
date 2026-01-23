@@ -9,6 +9,7 @@ import asyncio
 import random
 from dotenv import load_dotenv
 import msgs
+import timezone
 from adminstat import (
     get_admin_uns,
     add_post_to_count,
@@ -144,7 +145,7 @@ async def post(message_id: int):
         with open('.env', 'w') as f:
             for line in lines:
                 if line.startswith('LAST_TIME_POST'):
-                    f.write(f"LAST_TIME_POST = {datetime.now().isoformat()}\n")
+                    f.write(f"LAST_TIME_POST = {timezone.tz_now().isoformat()}\n")
                 else:
                     f.write(line)
         return success
@@ -201,9 +202,9 @@ async def periodic_post():
     while True:
         import config
         importlib.reload(config)
-        now = (datetime.now()).time()
-        today = datetime.now().date()
-        if (datetime.now() - config.LAST_RESET_DATE).days >= config.RESET_INTERVAL_DAYS:
+        now = timezone.tz_now().time()
+        today = timezone.tz_now().date()
+        if (timezone.tz_now() - config.LAST_RESET_DATE).days >= config.RESET_INTERVAL_DAYS:
             from adminstat import reset_statistics
             from msgs import clear_posted_messages
             reset_statistics()

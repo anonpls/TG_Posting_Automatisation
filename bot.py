@@ -61,27 +61,37 @@ async def handle_source_message(message: types.Message):
     new_message_event.set()
 
 
-@dp.message(Command("menu"))
+@dp.message(Command("start"))
+async def start_command(message: types.Message):
+    await message.answer("Привет, готов к работе! :)\n Используйте /help - там много интересного.")
+
+
+@dp.message(Command("help"))
 @admin_required
-async def menu_command(message: types.Message):
-    logger.info(f"Команда /menu использована пользователем @{message.from_user.username}")
+async def help_command(message: types.Message):
+    logger.info(f"Команда /help использована пользователем @{message.from_user.username}")
     await message.answer(
-        "Привет, готов к работе! :)\n\n"
-        "Вот список моих команд:\n"
-        "/menu - Отображение списка команд\n"
+        "Cписок команд, доступных только главному администратору:\n\n"
+        
         "/post <message_id> - Принудительная пересылка сообщения в канал по ID\n"
         "/settime <start_time> <end_time> - Установка времени начала и конца постинга (формат: HH:MM HH:MM)\n"
         "/setinterval <seconds> - Установка интервала постинга в секундах\n"
         "/resetstattime <days> - Установка интервала сброса статистики в днях\n"
-        "/stat - Просмотр статистики по админам\n"
-        "/config - Просмотр текущих настроек конфигурации\n"
         "/clear - Очистка базы данных сообщений\n"
-        "/messages - Просмотр сохраненных сообщений\n"
         "/addadm @<username> - Добавление нового админа\n"
         "/deladm @<username> - Удаление админа\n"
         "/addbot <BOT_TOKEN> <USER_TAG> - Добавление бота для пользователя\n"
-        "/deletebot <USER_TAG> - Удаление бота для пользователя"
-        "/groups <on/off> - Включение/выключение медиагрупп для админа"
+        "/deletebot <USER_TAG> - Удаление бота для пользователя\n"
+        "/tzset <offset> - Установка смещения часового пояса в часах (<offset> формат: H или -H)\n"
+
+        "Cписок команд, доступных всем администраторам:\n\n"
+
+        "/help - Отображение списка команд\n"
+        "/stat - Просмотр статистики по админам\n"
+        "/config - Просмотр текущих настроек конфигурации\n"
+        "/messages - Просмотр сохраненных сообщений\n"
+        "/group <on/off> - Включение/выключение медиагрупп для админа \n"
+        "Медиагруппа - сообщение с несколькими фотками - можно сохранять как целое сообщение, или по отдельности каждое вложение)\n"
     )
 
 
@@ -257,7 +267,7 @@ async def stat_command(message: types.Message):
 
 
 @dp.message(Command("config"))
-@general_admin_required
+@admin_required
 async def config_command(message: types.Message):
     logger.info(f"Команда /config использована пользователем @{message.from_user.username}")
     import config
@@ -265,18 +275,12 @@ async def config_command(message: types.Message):
     response = "Текущие настройки конфигурации:\n\n"
     response += f"Время начала постинга: {config.START_HOUR:02d}:{config.START_MINUTE:02d}\n"
     response += f"Время конца постинга: {config.END_HOUR:02d}:{config.END_MINUTE:02d}\n"
-    if config.POSTING_INTERVAL >= 1:
-        response += f"Интервал постинга: {round(config.POSTING_INTERVAL)} секунд\n"
-    elif config.POSTING_INTERVAL >= 1/60:
-        minutes = round(config.POSTING_INTERVAL * 60)
-        response += f"Интервал постинга: {minutes} минут\n"
-    else:
-        seconds = round(config.POSTING_INTERVAL * 3600)
-        response += f"Интервал постинга: {seconds} секунд\n"
+    response += f"Интервал постинга: {round(config.POSTING_INTERVAL)} секунд\n"
     response += f"Последний пост: {config.LAST_TIME_POST}\n"
     response += f"Последний сброс статистики: {config.LAST_RESET_DATE}\n"
     response += f"Интервал сброса статистики: {config.RESET_INTERVAL_DAYS} дней\n"
     response += f"Админы: {', '.join('@' + adm for adm in admins)}\n"
+    response += f"Смещение часового пояса: {config.TIMEZONE_OFFSET} часов\n"
     await message.answer(response)
 
 
@@ -403,7 +407,6 @@ async def add_bot(message: types.Message):
             await message.answer(f"Бот для пользователя {user_tag} уже существует.")
             return
 
-        # Обновить .env
         with open('.env', 'r') as f:
             lines = f.readlines()
 
@@ -459,7 +462,6 @@ async def delete_bot(message: types.Message):
             await message.answer(f"Бот для пользователя {user_tag} не найден.")
             return
 
-        # Обновить .env
         with open('.env', 'r') as f:
             lines = f.readlines()
 
@@ -494,6 +496,32 @@ async def group_command(message: types.Message):
     set_media_group_mode(message.from_user.username, mode)
     
     await message.answer(f"Режим сохранения медиа для @{message.from_user.username} установлен: {'группами' if mode else 'отдельно'}")
+
+
+@dp.message(Command("tzset"))
+@general_admin_required
+async def tzset_command(message: types.Message):
+    logger.info(f"Команда /tzset использована пользователем @{message.from_user.username} с аргументом {message.text.split()[1] if len(message.text.split()) > 1 else 'нет'}")
+    try:
+        args = message.text.split()
+        if len(args) != 2:
+            await message.answer("Используйте: /tzset <offset>\nПример: /tzset 3")
+            return
+        offset = int(args[1])
+        with open('.env', 'r') as f:
+            lines = f.readlines()
+
+        with open('.env', 'w') as f:
+            for line in lines:
+                if line.startswith('TIMEZONE_OFFSET'):
+                    f.write(f"TIMEZONE_OFFSET = {offset}\n")
+                else:
+                    f.write(line)
+        await message.answer(f"Смещение часового пояса установлено: {offset} часов")
+    except ValueError:
+        await message.answer("Смещение должно быть целым числом")
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
 
 
 async def main():
