@@ -71,7 +71,7 @@ async def start_command(message: types.Message):
 async def help_command(message: types.Message):
     logger.info(f"Команда /help использована пользователем @{message.from_user.username}")
     await message.answer(
-        "Cписок команд, доступных только главному администратору:\n\n"
+        "**Cписок команд, доступных только главному администратору:**\n\n"
         
         "/post <message_id> - Принудительная пересылка сообщения в канал по ID\n"
         "/settime <start_time> <end_time> - Установка времени начала и конца постинга (формат: HH:MM HH:MM)\n"
@@ -82,9 +82,9 @@ async def help_command(message: types.Message):
         "/deladm @<username> - Удаление админа\n"
         "/addbot <BOT_TOKEN> <USER_TAG> - Добавление бота для пользователя\n"
         "/deletebot <USER_TAG> - Удаление бота для пользователя\n"
-        "/tzset <offset> - Установка смещения часового пояса в часах (<offset> формат: H или -H)\n"
+        "/tzset <offset> - Установка смещения часового пояса в часах (<offset> формат: H или -H)\n\n"
 
-        "Cписок команд, доступных всем администраторам:\n\n"
+        "**Cписок команд, доступных всем администраторам:**\n\n"
 
         "/help - Отображение списка команд\n"
         "/stat - Просмотр статистики по админам\n"
