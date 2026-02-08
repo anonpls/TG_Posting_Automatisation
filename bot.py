@@ -3,17 +3,20 @@ import logging
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from telethon import TelegramClient
 import asyncio
 import ssl
 import certifi
 
 import msgs
+import admin_utils
 from posting import (
     forward_saved_message,
     periodic_post
 )
 from adminstat import (
     get_admin_uns,
+    get_admin_ids,
     load_stat,
     export_admin_stat_csv
 )
@@ -71,7 +74,7 @@ async def start_command(message: types.Message):
 async def help_command(message: types.Message):
     logger.info(f"Команда /help использована пользователем @{message.from_user.username}")
     await message.answer(
-        "**Cписок команд, доступных только главному администратору:**\n\n"
+        "Cписок команд, доступных только главному администратору:\n\n"
         
         "/post <message_id> - Принудительная пересылка сообщения в канал по ID\n"
         "/settime <start_time> <end_time> - Установка времени начала и конца постинга (формат: HH:MM HH:MM)\n"
@@ -84,12 +87,13 @@ async def help_command(message: types.Message):
         "/deletebot <USER_TAG> - Удаление бота для пользователя\n"
         "/tzset <offset> - Установка смещения часового пояса в часах (<offset> формат: H или -H)\n\n"
 
-        "**Cписок команд, доступных всем администраторам:**\n\n"
+        "Cписок команд, доступных всем администраторам:\n\n"
 
         "/help - Отображение списка команд\n"
         "/stat - Просмотр статистики по админам\n"
         "/config - Просмотр текущих настроек конфигурации\n"
         "/messages - Просмотр сохраненных сообщений\n"
+        "/delmsg <message_id> - Удаление сообщения из базы по ID\n"
         "/group <on/off> - Включение/выключение медиагрупп для админа \n"
         "Медиагруппа - сообщение с несколькими фотками - можно сохранять как целое сообщение, или по отдельности каждое вложение)\n"
     )
@@ -315,18 +319,20 @@ async def messages_command(message: types.Message):
 async def add_admin(message: types.Message):
     logger.info(f"Команда /addadm использована пользователем @{message.from_user.username} с аргументом {message.text.split()[1] if len(message.text.split()) > 1 else 'нет'}")
     try:
-        admins = get_admin_uns()
+        admin_uns = get_admin_uns()
+        admin_ids = get_admin_ids()
         args = message.text.split()
         if len(args) != 2:
             await message.answer("Используйте: /addadm @<username>\nПример: /addadm @ivan")
             return
 
-        new_id = args[1][1:]
-        if new_id in admins:
+        new_us = args[1][1:]
+        if new_us in admin_uns:
             await message.answer("Этот пользователь уже является админом.")
             return
 
-        admins.append(new_id)
+        admin_uns.append(new_us)
+        admin_ids = await admin_utils.resolve_usernames_to_ids(admin_uns)
 
         with open('.env', 'r') as f:
             lines = f.readlines()
@@ -334,11 +340,13 @@ async def add_admin(message: types.Message):
         with open('.env', 'w') as f:
             for line in lines:
                 if line.startswith('ADMIN_UNS'):
-                    f.write(f"ADMIN_UNS = {','.join(map(str, admins))}\n")
+                    f.write(f"ADMIN_UNS = {','.join(map(str, admin_uns))}\n")
+                elif line.startswith('ADMIN_IDS'):
+                    f.write(f"ADMIN_IDS = {','.join(map(str, admin_ids))}\n")
                 else:
                     f.write(line)
 
-        await message.answer(f"Новый админ добавлен: {new_id}")
+        await message.answer(f"Новый админ добавлен: {new_us}")
 
     except Exception as e:
         await message.answer(f"Ошибка: {e}")

@@ -74,6 +74,8 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
 
                 except Exception as e:
                     logger.error(f"Ошибка при пересылке сообщения {target_message_id}: {e}")
+                    if "no messages" in str(e):
+                        msgs.clear_message(target_message_id, msg['username'])
                     return False
             else:
                 other_bot_token = bots[msg['username']]
@@ -98,7 +100,10 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
                             data = await response.json()
 
                             if not data.get("ok", False):
+                                description = data.get("description", "")
                                 logger.error(f"Ошибка Telegram API при отправке другим ботом: {data}")
+                                if "message" in description.lower():
+                                    msgs.clear_message(target_message_id, msg['username']) 
                                 return False
 
                             forwarded_msg = data["result"]
