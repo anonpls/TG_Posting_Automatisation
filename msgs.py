@@ -6,6 +6,7 @@ from telethon import TelegramClient
 from dotenv import load_dotenv
 import csv
 from datetime import datetime
+import timezone
 import adminstat
 
 MESSAGES_DB = "messages.db"
@@ -31,6 +32,10 @@ def init_messages_db():
     ''')
     try:
         cursor.execute('ALTER TABLE messages ADD COLUMN media_group INTEGER DEFAULT NULL')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE messages ADD COLUMN posted_at TEXT DEFAULT NULL')
     except sqlite3.OperationalError:
         pass
     conn.commit()
@@ -171,8 +176,9 @@ def update_message_posted(message_id, chat_id, current_message_id):
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('UPDATE messages SET current_message_id = ?, posted = TRUE WHERE message_id = ? AND chat_id = ?',
-                   (current_message_id, message_id, chat_id))
+    cursor.execute(
+    'UPDATE messages SET current_message_id = ?, posted = TRUE, posted_at = ? WHERE message_id = ? AND chat_id = ?',
+        (current_message_id, timezone.tz_now().isoformat(), message_id, chat_id))
     conn.commit()
     conn.close()
     logger.info(f'Сообщение {message_id} обновлено как опубликованное с новым ID {current_message_id}')
@@ -207,8 +213,15 @@ async def collect_message_stats():
 
                         conn = sqlite3.connect(MESSAGES_DB)
                         cursor = conn.cursor()
-                        cursor.execute('UPDATE messages SET views = ?, reactions = ? WHERE message_id = ? AND chat_id = ?',
-                                    (views, reactions_count, msg_id, chat_id))
+                        now = timezone.tz_now()
+                        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+                        day_end = now.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+                        cursor.execute(
+                            'SELECT message_id, chat_id, current_message_id FROM messages '
+                            'WHERE posted = TRUE AND current_message_id IS NOT NULL '
+                            'AND posted_at >= ? AND posted_at <= ?',
+                            (day_start, day_end)
+                        )
                         conn.commit()
                         conn.close()
                         logger.info(f"Updated stats for message {current_msg_id}: views={views}, reactions={reactions_count}")

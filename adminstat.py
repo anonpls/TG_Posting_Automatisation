@@ -2,7 +2,8 @@ import sqlite3
 import os
 import logging
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
+import timezone
 import csv
 
 STATISTICS_DB = "statistics.db"
@@ -103,16 +104,47 @@ def export_admin_stat_csv(stat):
     return filename
 
 
-def load_stat():
+def load_stat(days: int | None = None):
     init_statistics_db()
-    update_views_reactions_count() # проблема может быть здесь
-    conn = sqlite3.connect(STATISTICS_DB)
+
+    if days is None:
+        update_views_reactions_count()
+        conn = sqlite3.connect(STATISTICS_DB)
+        cursor = conn.cursor()
+        cursor.execute('SELECT username, postcount, queuedcount, viewstotal, reactionstotal FROM statistics')
+        rows = cursor.fetchall()
+        conn.close()
+        return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2], 'viewstotal': row[3], 'reactionstotal': row[4]} for row in rows]
+
+    if days <= 0:
+        days = 1
+
+    now = timezone.tz_now()
+    period_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    period_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('SELECT username, postcount, queuedcount, viewstotal, reactionstotal FROM statistics')
+    cursor.execute(
+        '''
+        SELECT
+            username,
+            COUNT(*) as postcount,
+            COALESCE(SUM(views), 0) as viewstotal,
+            COALESCE(SUM(reactions), 0) as reactionstotal
+        FROM messages
+        WHERE posted = TRUE
+          AND posted_at IS NOT NULL
+          AND posted_at >= ?
+          AND posted_at <= ?
+        GROUP BY username
+        ''',
+        (period_start.isoformat(), period_end.isoformat())
+    )
     rows = cursor.fetchall()
     conn.close()
-    return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2], 'viewstotal': row[3], 'reactionstotal': row[4]} for row in rows]
-
+    ...
+    return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2], 'viewstotal': row[3], 'reactionstotal': row[4]} for row in rows]  
 
 def save_stat(stat):
     init_statistics_db()

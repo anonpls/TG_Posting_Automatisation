@@ -209,20 +209,20 @@ async def periodic_post():
         importlib.reload(config)
         now = timezone.tz_now().time()
         today = timezone.tz_now().date()
-        if (timezone.tz_now() - config.LAST_RESET_DATE).days >= config.RESET_INTERVAL_DAYS:
-            from adminstat import reset_statistics
-            from msgs import clear_posted_messages
-            reset_statistics()
-            clear_posted_messages()
-            with open('.env', 'r') as f:
-                lines = f.readlines()
+        # if (timezone.tz_now() - config.LAST_RESET_DATE).days >= config.RESET_INTERVAL_DAYS:
+        #     from adminstat import reset_statistics
+        #     from msgs import clear_posted_messages
+        #     reset_statistics()
+        #     clear_posted_messages()
+        #     with open('.env', 'r') as f:
+        #         lines = f.readlines()
 
-            with open('.env', 'w') as f:
-                for line in lines:
-                    if line.startswith('LAST_RESET_DATE'):
-                        f.write(f"LAST_RESET_DATE = {today.isoformat()}\n")
-                    else:
-                        f.write(line)
+        #     with open('.env', 'w') as f:
+        #         for line in lines:
+        #             if line.startswith('LAST_RESET_DATE'):
+        #                 f.write(f"LAST_RESET_DATE = {today.isoformat()}\n")
+        #             else:
+        #                 f.write(line)
         if time(config.START_HOUR, config.START_MINUTE) <= now <= time(config.END_HOUR, config.END_MINUTE):
             await post_random()
             await msgs.collect_message_stats()

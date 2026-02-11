@@ -54,7 +54,7 @@ def general_admin_required(func):
     return wrapper
 
 
-@dp.message(lambda message: (message.photo or message.document or message.video or message.audio or message.sticker) and (message.text is None or not message.text.startswith('/')))
+@dp.message(lambda message: not message.text.startswith('/'))
 @admin_required
 async def handle_source_message(message: types.Message):
     message_data = msgs.save_message_to_db(message)
@@ -259,12 +259,33 @@ async def set_reset_stat_time(message: types.Message):
 @dp.message(Command("stat"))
 @admin_required
 async def stat_command(message: types.Message):
-    stat = load_stat()
+    args = message.text.split()
+    days = None
+
+    if len(args) > 2:
+        await message.answer("Используйте: /stat или /stat <days>\nПример: /stat 7")
+        return
+
+    if len(args) == 2:
+        try:
+            days = int(args[1])
+            if days <= 0:
+                await message.answer("Количество дней должно быть положительным числом")
+                return
+        except ValueError:
+            await message.answer("Количество дней должно быть целым числом")
+            return
+
+    stat = load_stat(days=days)
     filename = export_admin_stat_csv(stat)
+
+    caption = "📊 Статистика по админам"
+    if days is not None:
+        caption += f" за последние {days} дн."
 
     await message.answer_document(
         types.FSInputFile(filename),
-        caption="📊 Статистика по админам"
+        caption=caption
     )
 
     os.remove(filename)
