@@ -275,9 +275,11 @@ async def stat_command(message: types.Message):
         except ValueError:
             await message.answer("Количество дней должно быть целым числом")
             return
-
-    stat = load_stat(days=days)
-    filename = export_admin_stat_csv(stat)
+    try:
+        stat = load_stat(days=days)
+        filename = export_admin_stat_csv(stat)
+    except Exception as e:
+        await logger.error(f"Код ошибки {e}")
 
     caption = "📊 Статистика по админам"
     if days is not None:
