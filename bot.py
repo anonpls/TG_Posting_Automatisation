@@ -54,7 +54,7 @@ def general_admin_required(func):
     return wrapper
 
 
-@dp.message(lambda message: not message.text.startswith('/'))
+@dp.message(lambda message: message.photo or message.document or message.video or message.audio or message.sticker or (message.text and not message.text.startswith('/')))
 @admin_required
 async def handle_source_message(message: types.Message):
     message_data = msgs.save_message_to_db(message)
