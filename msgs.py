@@ -216,12 +216,10 @@ async def collect_message_stats():
                         now = timezone.tz_now()
                         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
                         day_end = now.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
-                        cursor.execute(
-                            'SELECT message_id, chat_id, current_message_id FROM messages '
-                            'WHERE posted = TRUE AND current_message_id IS NOT NULL '
-                            'AND posted_at >= ? AND posted_at <= ?',
-                            (day_start, day_end)
-                        )
+                        cursor.execute('UPDATE messages SET views = ?, reactions = ? '
+                                       'WHERE message_id = ? AND chat_id = ?'
+                                       'AND posted_at >= ? AND posted_at <= ?',
+                                    (views, reactions_count, msg_id, chat_id, day_start, day_end))
                         conn.commit()
                         conn.close()
                         logger.info(f"Updated stats for message {current_msg_id}: views={views}, reactions={reactions_count}")

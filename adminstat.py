@@ -128,22 +128,27 @@ def load_stat(days: int | None = None):
     cursor.execute(
         '''
         SELECT
-            username,
+            m.username,
             COUNT(*) as postcount,
-            COALESCE(SUM(views), 0) as viewstotal,
-            COALESCE(SUM(reactions), 0) as reactionstotal
-        FROM messages
-        WHERE posted = TRUE
-          AND posted_at IS NOT NULL
-          AND posted_at >= ?
-          AND posted_at <= ?
-        GROUP BY username
+            (
+                SELECT COUNT(*)
+                FROM messages q
+                WHERE q.username = m.username
+                AND q.posted = FALSE
+            ) as queuedcount,
+            COALESCE(SUM(m.views), 0) as viewstotal,
+            COALESCE(SUM(m.reactions), 0) as reactionstotal
+        FROM messages m
+        WHERE m.posted = TRUE
+        AND m.posted_at IS NOT NULL
+        AND m.posted_at >= ?
+        AND m.posted_at <= ?
+        GROUP BY m.username
         ''',
         (period_start.isoformat(), period_end.isoformat())
     )
     rows = cursor.fetchall()
     conn.close()
-    ...
     return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2], 'viewstotal': row[3], 'reactionstotal': row[4]} for row in rows]  
 
 def save_stat(stat):
