@@ -22,6 +22,7 @@ def init_messages_db():
             message_id INTEGER,
             chat_id INTEGER,
             username TEXT,
+            user_id INTEGER,
             current_message_id INTEGER,
             posted BOOLEAN DEFAULT FALSE,
             is_forwarded_from_channel BOOLEAN DEFAULT FALSE,
@@ -36,6 +37,10 @@ def init_messages_db():
         pass
     try:
         cursor.execute('ALTER TABLE messages ADD COLUMN posted_at TEXT DEFAULT NULL')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE messages ADD COLUMN user_id INTEGER DEFAULT NULL')
     except sqlite3.OperationalError:
         pass
     conn.commit()
@@ -81,20 +86,20 @@ def load_messages():
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('SELECT message_id, chat_id, username, current_message_id, posted, is_forwarded_from_channel, views, reactions, media_group FROM messages WHERE posted = FALSE')
+    cursor.execute('SELECT message_id, chat_id, username, user_id, current_message_id, posted, is_forwarded_from_channel, views, reactions, media_group FROM messages WHERE posted = FALSE')
     rows = cursor.fetchall()
     conn.close()
-    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'current_message_id': row[3], 'posted': bool(row[4]), 'is_forwarded_from_channel': bool(row[5]), 'views': row[6], 'reactions': row[7], 'media_group': row[8]} for row in rows]
+    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'user_id': row[3], 'current_message_id': row[4], 'posted': bool(row[5]), 'is_forwarded_from_channel': bool(row[6]), 'views': row[7], 'reactions': row[8], 'media_group': row[9]} for row in rows]
 
 
 def load_all_messages():
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('SELECT message_id, chat_id, username, current_message_id, posted, is_forwarded_from_channel, views, reactions, media_group FROM messages')
+    cursor.execute('SELECT message_id, chat_id, username, user_id, current_message_id, posted, is_forwarded_from_channel, views, reactions, media_group FROM messages')
     rows = cursor.fetchall()
     conn.close()
-    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'current_message_id': row[3], 'posted': bool(row[4]), 'is_forwarded_from_channel': bool(row[5]), 'views': row[6], 'reactions': row[7], 'media_group': row[8]} for row in rows]
+    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'user_id': row[3], 'current_message_id': row[4], 'posted': bool(row[5]), 'is_forwarded_from_channel': bool(row[6]), 'views': row[7], 'reactions': row[8], 'media_group': row[9]} for row in rows]
 
 
 def save_messages(messages):
@@ -102,8 +107,8 @@ def save_messages(messages):
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
     for msg in messages:
-        cursor.execute('INSERT OR REPLACE INTO messages (message_id, chat_id, username, current_message_id, posted, is_forwarded_from_channel, views, reactions) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                       (msg['message_id'], msg['chat_id'], msg['username'], msg.get('current_message_id'), msg.get('posted', False), msg.get('is_forwarded_from_channel', False), msg.get('views', 0), msg.get('reactions', 0), msg.get('media_group', None)))
+        cursor.execute('INSERT OR REPLACE INTO messages (message_id, chat_id, username, user_id, current_message_id, posted, is_forwarded_from_channel, views, reactions, media_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                       (msg['message_id'], msg['chat_id'], msg['username'], msg.get('user_id'), msg.get('current_message_id'), msg.get('posted', False), msg.get('is_forwarded_from_channel', False), msg.get('views', 0), msg.get('reactions', 0), msg.get('media_group', None)))
     conn.commit()
     conn.close()
 
@@ -117,12 +122,12 @@ def clear_messages():
     conn.close()
 
 
-def clear_message(msg_id, adm):
+def clear_message(msg_id, adm_id):
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM messages WHERE message_id = ? AND username = ?', 
-                   (msg_id, adm))
+    cursor.execute('DELETE FROM messages WHERE message_id = ? AND user_id = ?', 
+                   (msg_id, adm_id))
     num = cursor.rowcount
     conn.commit()
     conn.close()
@@ -142,7 +147,7 @@ def clear_posted_messages():
 def save_message_to_db(message: types.Message):
     init_messages_db()
 
-    media_group_mode = adminstat.get_media_group_mode(message.from_user.username)
+    media_group_mode = adminstat.get_media_group_mode(message.from_user.id)
     if hasattr(message, 'media_group_id') and media_group_mode:
         media_group_id = message.media_group_id
         mgid = f' - медиа группа {media_group_id}'
@@ -151,19 +156,20 @@ def save_message_to_db(message: types.Message):
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
     is_forwarded_from_channel = message.forward_origin is not None and hasattr(message.forward_origin, 'chat') and message.forward_origin.chat.type in ['channel']
-    cursor.execute('INSERT OR IGNORE INTO messages (message_id, chat_id, username, posted, is_forwarded_from_channel, views, reactions, media_group) VALUES (?, ?, ?, FALSE, ?, ?, ?, ?)',
-                   (message.message_id, message.chat.id, message.from_user.username, is_forwarded_from_channel, 0, 0, media_group_id))
+    cursor.execute('INSERT OR IGNORE INTO messages (message_id, chat_id, username, user_id, posted, is_forwarded_from_channel, views, reactions, media_group) VALUES (?, ?, ?, ?, FALSE, ?, ?, ?, ?)',
+                   (message.message_id, message.chat.id, message.from_user.username, message.from_user.id, is_forwarded_from_channel, 0, 0, media_group_id))
     conn.commit()
     conn.close()
 
     if message.from_user and message.from_user.username:
-        adminstat.add_queued_to_count(message.from_user.username)
+        adminstat.add_queued_to_count(message.from_user.id)
         logger.info(f"Сообщение {message.message_id}{mgid} сохранено в базу данных от пользователя {message.from_user.username}")
 
     return {
         'message_id': message.message_id,
         'chat_id': message.chat.id,
         'username': message.from_user.username,
+        'user_id': message.from_user.id,
         'posted': False,
         'is_forwarded_from_channel': is_forwarded_from_channel,
         'views': 0, 

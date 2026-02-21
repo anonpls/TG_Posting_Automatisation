@@ -35,7 +35,7 @@ dp = Dispatcher()
 
 def admin_required(func):
     async def wrapper(message):
-        if message.from_user.username not in get_admin_uns():
+        if message.from_user.id not in get_admin_ids():
             await message.answer("Недостаточно прав для совершения команды.")
             return
         return await func(message)
@@ -44,10 +44,11 @@ def admin_required(func):
 
 def general_admin_required(func):
     async def wrapper(message):
-        if message.from_user.username != get_admin_uns()[0] and message.from_user.username not in get_admin_uns():
+        ids = get_admin_ids()
+        if message.from_user.id not in ids:
             await message.answer("Недостаточно прав для совершения команды")
             return
-        elif message.from_user.username != get_admin_uns()[0]:
+        elif ids and message.from_user.id != ids[0]:
             await message.answer("Для этой команды требуются права главного админа")
             return
         return await func(message)
@@ -139,7 +140,7 @@ async def delete_message(message: types.Message):
             return
         try:
             msg_id = int(args[1])
-            if msgs.clear_message(msg_id, message.from_user.username) > 0:
+            if msgs.clear_message(msg_id, message.from_user.id) > 0:
                 logger.info(f"Сообщение {msg_id} удалено!")
                 await message.answer(f"Сообщение {msg_id} удалено!")
             else: 
@@ -422,6 +423,11 @@ async def add_bot(message: types.Message):
 
         bot_token = args[1]
         user_tag = args[2].lstrip('@')
+        try:
+            user_id = await admin_utils.resolve_username_to_id(user_tag)
+        except Exception as e:
+            await message.answer(f"Не удалось определить ID пользователя {user_tag}: {e}")
+            return
 
         BOT_MAPPINGS = os.getenv('BOT_MAPPINGS', '')
         bots = {}
@@ -431,10 +437,9 @@ async def add_bot(message: types.Message):
                     parts = mapping.split(':')
                     if len(parts) >= 2:
                         token = ':'.join(parts[:-1])
-                        username = parts[-1]
-                        bots[username] = token
+                        bots[parts[-1]] = token
 
-        if user_tag in bots:
+        if str(user_id) in bots:
             await message.answer(f"Бот для пользователя {user_tag} уже существует.")
             return
 
@@ -451,7 +456,7 @@ async def add_bot(message: types.Message):
         else:
             lines.append('BOT_MAPPINGS =\n')
 
-        bot_mappings.append(f'{bot_token}:{user_tag}')
+        bot_mappings.append(f'{bot_token}:{user_id}')
 
         with open('.env', 'w') as f:
             for line in lines:
@@ -477,6 +482,10 @@ async def delete_bot(message: types.Message):
             return
 
         user_tag = args[1].lstrip('@')
+        try:
+            user_id = await admin_utils.resolve_username_to_id(user_tag)
+        except Exception:
+            user_id = None
 
         BOT_MAPPINGS = os.getenv('BOT_MAPPINGS', '')
         bots = {}
@@ -486,10 +495,9 @@ async def delete_bot(message: types.Message):
                     parts = mapping.split(':')
                     if len(parts) >= 2:
                         token = ':'.join(parts[:-1])
-                        username = parts[-1]
-                        bots[username] = token
+                        bots[parts[-1]] = token
 
-        if user_tag not in bots:
+        if str(user_id) not in bots:
             await message.answer(f"Бот для пользователя {user_tag} не найден.")
             return
 
@@ -501,7 +509,7 @@ async def delete_bot(message: types.Message):
                 if line.startswith('BOT_MAPPINGS'):
                     existing = line.split('=')[1].strip()
                     if existing:
-                        mappings = [m for m in existing.split(',') if not m.endswith(f':{user_tag}')]
+                        mappings = [m for m in existing.split(',') if not m.endswith(f':{user_id}')]
                         f.write(f'BOT_MAPPINGS = {",".join(mappings)}\n')
                     else:
                         f.write('BOT_MAPPINGS =\n')
@@ -524,7 +532,7 @@ async def group_command(message: types.Message):
     
     from adminstat import set_media_group_mode
     mode = args[1].lower() == "on"
-    set_media_group_mode(message.from_user.username, mode)
+    set_media_group_mode(message.from_user.id, mode)
     
     await message.answer(f"Режим сохранения медиа для @{message.from_user.username} установлен: {'группами' if mode else 'отдельно'}")
 

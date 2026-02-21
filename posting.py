@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 import msgs
 import timezone
 from adminstat import (
+    get_admin_ids,
     get_admin_uns,
     add_post_to_count,
     decrement_queued_to_count
@@ -39,8 +40,11 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
                 parts = mapping.split(':')
                 if len(parts) >= 2:
                     token = ':'.join(parts[:-1])
-                    username = parts[-1]
-                    bots[username] = token
+                    try:
+                        user_id = int(parts[-1])
+                    except ValueError:
+                        user_id = parts[-1]
+                    bots[user_id] = token
 
     for msg in messages:
         if msg['message_id'] == target_message_id:
@@ -49,7 +53,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
                 mgid = f' - медиа группа {msg["media_group"]}'
             else:
                 msg_to_send = [msg['message_id']]
-            if msg['username'] not in bots:
+            if msg.get('user_id') not in bots:
                 try:
                     from bot import bot
                     if msg.get('is_forwarded_from_channel', True):
@@ -75,10 +79,10 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
                 except Exception as e:
                     logger.error(f"Ошибка при пересылке сообщения {target_message_id}: {e}")
                     if "no messages" in str(e):
-                        msgs.clear_message(target_message_id, msg['username'])
+                        msgs.clear_message(target_message_id, msg.get('user_id'))
                     return False
             else:
-                other_bot_token = bots[msg['username']]
+                other_bot_token = bots[msg.get('user_id')]
                 namebot_api_url = f"https://api.telegram.org/bot{other_bot_token}"
                 genbot_api_url = f"https://api.telegram.org/bot{os.getenv("BOT_TOKEN")}"
                 try:
@@ -103,7 +107,7 @@ async def forward_saved_message(target_message_id: int, target_chat_id: int):
                                 description = data.get("description", "")
                                 logger.error(f"Ошибка Telegram API при отправке другим ботом: {data}")
                                 if "message" in description.lower():
-                                    msgs.clear_message(target_message_id, msg['username']) 
+                                    msgs.clear_message(target_message_id, msg.get('user_id'))
                                 return False
 
                             forwarded_msg = data["result"]
@@ -159,7 +163,7 @@ async def post(message_id: int):
 async def post_random():
     global is_waiting_for_message
     messages = msgs.load_messages()
-    admins = get_admin_uns()
+    admins = get_admin_ids()
 
     if not messages:
         if not is_waiting_for_message:
@@ -188,7 +192,7 @@ async def post_random():
     else:
         logger.info(f"Выбран админ для постинга: {rand_adm}. Используем основного бота")
 
-    msg_from_adm = [msg for msg in messages if msg['username'] == rand_adm]
+    msg_from_adm = [msg for msg in messages if msg.get('user_id') == rand_adm]
     try:
         msg = random.choice(msg_from_adm)
         success = await post(msg['message_id'])
