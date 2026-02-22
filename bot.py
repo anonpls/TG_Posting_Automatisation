@@ -36,7 +36,7 @@ dp = Dispatcher()
 def admin_required(func):
     async def wrapper(message):
         if message.from_user.id not in get_admin_ids():
-            await message.answer("Недостаточно прав для совершения команды.")
+            await message.answer(f"Недостаточно прав для совершения команды.")
             return
         return await func(message)
     return wrapper
@@ -46,13 +46,80 @@ def general_admin_required(func):
     async def wrapper(message):
         ids = get_admin_ids()
         if message.from_user.id not in ids:
-            await message.answer("Недостаточно прав для совершения команды")
+            await message.answer(f"Недостаточно прав для совершения команды")
             return
         elif ids and message.from_user.id != ids[0]:
             await message.answer("Для этой команды требуются права главного админа")
             return
         return await func(message)
     return wrapper
+
+
+async def ensure_admin_ids():
+    load_dotenv(override=True)
+    import os
+    uns = get_admin_uns()
+    if not uns:
+        return
+    current = os.getenv('ADMIN_IDS', '').strip()
+    if current:
+        return
+    
+    try:
+        resolved = await admin_utils.resolve_usernames_to_ids(uns)
+    except Exception as e:
+        logger.error(f"Failed to resolve admin usernames to IDs: {e}")
+        return
+    with open('.env', 'r') as f:
+        lines = f.readlines()
+    with open('.env', 'w') as f:
+        written = False
+        for line in lines:
+            if line.startswith('ADMIN_IDS'):
+                f.write(f"ADMIN_IDS = {','.join(map(str, resolved))}\n")
+                written = True
+            else:
+                f.write(line)
+        if not written:
+            f.write(f"ADMIN_IDS = {','.join(map(str, resolved))}\n")
+
+
+async def normalize_bot_mappings():
+    load_dotenv(override=True)
+    import os
+    BOT_MAPPINGS = os.getenv('BOT_MAPPINGS', '')
+    if not BOT_MAPPINGS:
+        return
+    parts = []
+    changed = False
+    for mapping in BOT_MAPPINGS.split(','):
+        if ':' not in mapping:
+            continue
+        token, tag = mapping.rsplit(':', 1)
+        original = tag
+        try:
+            tag = str(int(tag))
+        except ValueError:
+            try:
+                tag = str(await admin_utils.resolve_username_to_id(tag.lstrip('@')))
+            except Exception:
+                tag = original
+        if tag != original:
+            changed = True
+        parts.append(f"{token}:{tag}")
+    if changed:
+        with open('.env', 'r') as f:
+            lines = f.readlines()
+        with open('.env', 'w') as f:
+            wrote = False
+            for line in lines:
+                if line.startswith('BOT_MAPPINGS'):
+                    f.write(f"BOT_MAPPINGS = {','.join(parts)}\n")
+                    wrote = True
+                else:
+                    f.write(line)
+            if not wrote:
+                f.write(f"BOT_MAPPINGS = {','.join(parts)}\n")
 
 
 @dp.message(lambda message: message.photo or message.document or message.video or message.audio or message.sticker or (message.text and not message.text.startswith('/')))
@@ -564,6 +631,16 @@ async def tzset_command(message: types.Message):
 
 
 async def main():
+    # make sure ADMIN_IDS and BOT_MAPPINGS are normalized before polling
+    try:
+        await ensure_admin_ids()
+    except Exception as e:
+        logger.error(f"Error ensuring admin ids: {e}")
+    try:
+        await normalize_bot_mappings()
+    except Exception as e:
+        logger.error(f"Error normalizing bot mappings: {e}")
+
     asyncio.create_task(periodic_post())
     await dp.start_polling(bot)
     logger.info("Бот запущен")

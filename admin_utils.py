@@ -18,7 +18,7 @@ async def resolve_usernames_to_ids(usernames):
         if not isinstance(entity, User):
             raise ValueError(f"{username} это не пользователь")
 
-        ids.append(str(entity.id))
+        ids.append(int(entity.id))
     return ids
 
 async def resolve_username_to_id(username: str) -> int:

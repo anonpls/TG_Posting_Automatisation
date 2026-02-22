@@ -20,7 +20,7 @@ def get_admin_uns():
 
 def get_admin_ids():
     load_dotenv(override=True)
-    ADMIN_IDS = [admin_id for admin_id in os.getenv('ADMIN_IDS', '').split(',')]
+    ADMIN_IDS = [int(admin_id) for admin_id in os.getenv('ADMIN_IDS', '').split(',')]
     return ADMIN_IDS
 
 
