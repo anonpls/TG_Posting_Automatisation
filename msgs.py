@@ -58,6 +58,16 @@ def get_media_group_ids(mg_id):
     return [row[0] for row in rows]
 
 
+def _format_posted_at(raw: str | None) -> str:
+    if not raw:
+        return ''
+    try:
+        dt = datetime.fromisoformat(raw)
+        return dt.strftime('%Y/%m/%d %H:%M:%S')
+    except Exception:
+        return raw
+
+
 def export_msgs_csv(stat):
     filename = f"msgs_{datetime.now().date()}.csv"
     with open(filename, "w", newline="", encoding="utf-8") as f:
@@ -68,7 +78,8 @@ def export_msgs_csv(stat):
             "username",
             "views",
             "reactions",
-            "posted"
+            "posted",
+            "posted_at"
         ])
         for msg in stat:
             writer.writerow([
@@ -77,7 +88,8 @@ def export_msgs_csv(stat):
                 msg["username"],
                 msg["views"],
                 msg["reactions"],
-                msg["posted"]
+                msg["posted"],
+                _format_posted_at(msg.get("posted_at"))
             ])
     return filename
 
@@ -86,20 +98,20 @@ def load_messages():
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('SELECT message_id, chat_id, username, user_id, current_message_id, posted, is_forwarded_from_channel, views, reactions, media_group FROM messages WHERE posted = FALSE')
+    cursor.execute('SELECT message_id, chat_id, username, user_id, current_message_id, posted, is_forwarded_from_channel, views, reactions, media_group, posted_at FROM messages WHERE posted = FALSE')
     rows = cursor.fetchall()
     conn.close()
-    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'user_id': row[3], 'current_message_id': row[4], 'posted': bool(row[5]), 'is_forwarded_from_channel': bool(row[6]), 'views': row[7], 'reactions': row[8], 'media_group': row[9]} for row in rows]
+    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'user_id': row[3], 'current_message_id': row[4], 'posted': bool(row[5]), 'is_forwarded_from_channel': bool(row[6]), 'views': row[7], 'reactions': row[8], 'media_group': row[9], 'posted_at': row[10]} for row in rows]
 
 
 def load_all_messages():
     init_messages_db()
     conn = sqlite3.connect(MESSAGES_DB)
     cursor = conn.cursor()
-    cursor.execute('SELECT message_id, chat_id, username, user_id, current_message_id, posted, is_forwarded_from_channel, views, reactions, media_group FROM messages')
+    cursor.execute('SELECT message_id, chat_id, username, user_id, current_message_id, posted, is_forwarded_from_channel, views, reactions, media_group, posted_at FROM messages')
     rows = cursor.fetchall()
     conn.close()
-    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'user_id': row[3], 'current_message_id': row[4], 'posted': bool(row[5]), 'is_forwarded_from_channel': bool(row[6]), 'views': row[7], 'reactions': row[8], 'media_group': row[9]} for row in rows]
+    return [{'message_id': row[0], 'chat_id': row[1], 'username': row[2], 'user_id': row[3], 'current_message_id': row[4], 'posted': bool(row[5]), 'is_forwarded_from_channel': bool(row[6]), 'views': row[7], 'reactions': row[8], 'media_group': row[9], 'posted_at': row[10]} for row in rows]
 
 
 def save_messages(messages):
