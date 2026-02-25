@@ -631,7 +631,6 @@ async def tzset_command(message: types.Message):
 
 
 async def main():
-    # make sure ADMIN_IDS and BOT_MAPPINGS are normalized before polling
     try:
         await ensure_admin_ids()
     except Exception as e:
@@ -640,6 +639,10 @@ async def main():
         await normalize_bot_mappings()
     except Exception as e:
         logger.error(f"Error normalizing bot mappings: {e}")
+    try:
+        await msgs.update_user_ids()
+    except Exception as e:
+        logger.error(f"Error updating user IDs at database: {e}")
 
     asyncio.create_task(periodic_post())
     await dp.start_polling(bot)

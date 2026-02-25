@@ -247,3 +247,29 @@ async def collect_message_stats():
                     logger.error(f"Error fetching stats for message {current_msg_id}: {e}")
     except:
         logger.error("CORE_API_ID or CORE_API_HASH not found in .env")
+
+
+async def update_user_ids():
+    usernames = os.getenv("ADMIN_UNS", "").split(",")
+    user_ids = os.getenv("ADMIN_IDS", "").split(",")
+
+    if len(usernames) != len(user_ids):
+        logger.error("Ошибка: Списки имен и ID разной длины!")
+        return
+
+    data_to_update = list(zip(user_ids, usernames))
+
+    try:
+        conn = sqlite3.connect(MESSAGES_DB)
+        cursor = conn.cursor()
+        
+        cursor.executemany("UPDATE messages SET user_id = ? WHERE username = ?", data_to_update)
+        
+        conn.commit()
+        logger.info(f"Успешно обновлено типов пользователей: {len(data_to_update)}")
+        
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при работе с базой: {e}")
+    finally:
+        if conn:
+            conn.close()
