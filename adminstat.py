@@ -114,7 +114,7 @@ def load_stat(days: int | None = None):
         cursor.execute('SELECT username, postcount, queuedcount, viewstotal, reactionstotal FROM statistics')
         rows = cursor.fetchall()
         conn.close()
-        return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2], 'viewstotal': row[3], 'reactionstotal': row[4]} for row in rows]
+        return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2], 'viewstotal': row[3], 'reactionstotal': row[4], 'reaction_rate': round((row[4] / row[3] * 100), 2) if row[3] > 0 else 0} for row in rows]
 
     if days <= 0:
         days = 1
@@ -149,7 +149,7 @@ def load_stat(days: int | None = None):
     )
     rows = cursor.fetchall()
     conn.close()
-    return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2], 'viewstotal': row[3], 'reactionstotal': row[4]} for row in rows]  
+    return [{'username': row[0], 'postcount': row[1], 'queuedcount': row[2], 'viewstotal': row[3], 'reactionstotal': row[4], 'reaction_rate': round((row[4] / row[3] * 100), 2) if row[3] > 0 else 0} for row in rows]  
 
 def save_stat(stat):
     init_statistics_db()
